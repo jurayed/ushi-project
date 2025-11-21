@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Тест API Уши</h2>
+    
+    <button onclick="testHealth()">Test Health</button>
+    <button onclick="testRegister()">Test Register</button>
+    <button onclick="testUsers()">Test Users</button>
+    
+    <div id="result"></div>
+
+    <script>
+        async function testHealth() {
+            const response = await fetch('http://localhost:3000/api/health');
+            const data = await response.json();
+            document.getElementById('result').innerHTML = JSON.stringify(data, null, 2);
+        }
+
+        async function testRegister() {
+            const response = await fetch('http://localhost:3000/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: 'testuser',
+                    email: 'test@example.com',
+                    password: '123456'
+                })
+            });
+            const data = await response.json();
+            document.getElementById('result').innerHTML = JSON.stringify(data, null, 2);
+        }
+
+        async function testUsers() {
+            const response = await fetch('http://localhost:3000/api/users');
+            const data = await response.json();
+            document.getElementById('result').innerHTML = JSON.stringify(data, null, 2);
+        }
+    </script>
+</body>
+</html>
