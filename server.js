@@ -1,11 +1,17 @@
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
+const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Подключаемся к базе данных
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// База данных
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -14,29 +20,16 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
-// Middleware для парсинга JSON
-app.use(express.json());
-
-// Проверка подключения к базе
-app.get('/api/health', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT NOW()');
-    res.json({ 
-      status: 'OK', 
-      database: 'Connected', 
-      time: result.rows[0].now 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Database connection failed' });
-  }
+// Единый формат ответа API
+const apiResponse = (success, data, message = '') => ({
+  success,
+  data,
+  message
 });
 
-// Главная страница
-app.get('/', (req, res) => {
-  res.send('Привет! Уши на связи! 👂 База данных подключена!');
-});
+// Ваши существующие endpoints (здоровье, регистрация, логин)
+// ... ваш текущий код ...
 
-// Запускаем сервер
 app.listen(port, () => {
-  console.log(`Сервер запущен на http://localhost:${port}`);
+  console.log(`🚀 Сервер запущен на http://localhost:${port}`);
 });
