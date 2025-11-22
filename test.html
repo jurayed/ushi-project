@@ -1,109 +1,409 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 Тест Уши - Multiple AI Провайдеры</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, 
+
+#4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .control-group {
+
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #4facfe;
+        }
+        
+        .control-group h3 {
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .control-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+
+        }
+        
+        label {
+            font-weight: 600;
+            color: #555;
+            min-width: 100px;
+        }
+        
+        select, input {
+            padding: 10px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #4facfe;
+
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            flex: 1;
+        }
+        
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .result-area {
+            margin-top: 30px;
+        }
+        
+
+        .typing {
+            color: #6c757d;
+            font-style: italic;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+        
+        .result {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+        
+        .success {
+            border-color: #28a745;
+            background: #f8fff9;
+
+        }
+        
+        .error {
+            border-color: #dc3545;
+            background: #fff8f8;
+        }
+        
+        .timing {
+            background: #e9ecef;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .timing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+
+        }
+        
+        .timing-item {
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .timing-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #4facfe;
+        }
+        
+        .provider-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #4facfe;
+            color: white;
+            border-radius: 12px;
+
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .psychotype-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+    </style>
+</head>
 <body>
-    <h2>Тест API Уши</h2>
-    
-    <button onclick="testHealth()">Test Health</button>
-    <button onclick="testRegister()">Test Register</button>
-    <button onclick="testUsers()">Test Users</button>
-    
-    <div id="result"></div>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Уши - AI Тестирование</
+
+h1>
+            <p>Тестируйте разные AI провайдеры и психотипы</p>
+        </div>
+        
+        <div class="content">
+            <div class="control-group">
+                <h3>🎭 Настройки чата</h3>
+                <div class="control-row">
+                    <label for="psychotype">Психотип:</label>
+                    <select id="psychotype">
+                        <option value="empath">Эмпат 🤗</option>
+                        <option value="optimist">Оптимист 🌟</option>
+                        <option value="rational">Рационалист 🧠</option>
+                    </select>
+                </div>
+                
+
+                <div class="control-row">
+                    <label for="provider">AI Провайдер:</label>
+                    <select id="provider">
+                        <option value="deepseek">DeepSeek</option>
+                        <!-- Опции загружаются через JavaScript -->
+                    </select>
+                </div>
+                
+                <div class="control-row">
+                    <label for="messageInput">Сообщение:</label>
+                    <input type="text" id="messageInput" placeholder="Напишите ваше сообщение...">
+                </div>
+            </div>
+            
+
+            <div class="buttons">
+                <button class="btn-primary" onclick="testAIChat()">💬 Отправить ИИ</button>
+                <button class="btn-secondary" onclick="loadProviders()">🔄 Обновить провайдеры</button>
+            </div>
+            
+            <div id="typingIndicator" class="typing">
+                ⏳ ИИ печатает ответ... Пожалуйста, подождите.
+            </div>
+            
+            <div class="result-area">
+                <h3>📊 Результаты</h3>
+                <div id="chatResult"></div>
+            </div>
+        </div>
+    </div>
+
 
     <script>
-        async function testHealth() {
-            const response = await fetch('http://localhost:3000/api/health');
-            const data = await response.json();
-            document.getElementById('result').innerHTML = JSON.stringify(data, null, 2);
+        // Загружаем доступные провайдеры при загрузке страницы
+        document.addEventListener('DOMContentLoaded', loadProviders);
+
+        async function loadProviders() {
+            try {
+                const response = await fetch('http://localhost:3000/api/providers');
+                const providers = await response.json();
+                
+                const providerSelect = document.getElementById('provider');
+                providerSelect.innerHTML = '';
+                
+                providers.forEach(provider => {
+                    const option = 
+
+document.createElement('option');
+                    option.value = provider.id;
+                    option.textContent = `${provider.name} ${provider.enabled ? '✅' : '❌'}`;
+                    providerSelect.appendChild(option);
+                });
+                
+                console.log('✅ Провайдеры загружены:', providers);
+            } catch (error) {
+                console.error('❌ Ошибка загрузки провайдеров:', error);
+                alert('Ошибка загрузки провайдеров: ' + error.message);
+            }
         }
 
-        async function testRegister() {
-            const response = await fetch('http://localhost:3000/api/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    username: 'testuser',
-                    email: 'test@example.com',
-                    password: '123456'
-                })
-            });
-            const data = await response.json();
-            document.getElementById('result').innerHTML = JSON.stringify(data, null, 2);
-        }
+        async function testAIChat() {
+            const psychotype = 
 
-        async function testUsers() {
-            const response = await fetch('http://localhost:3000/api/users');
-            const data = await response.json();
-            document.getElementById('result').innerHTML = JSON.stringify(data, null, 2);
-        }
-    </script>
-	
-	<div style="margin: 20px; padding: 20px; border: 1px solid #ccc;">
-		<h3>Тест чата с ИИ</h3>
-		<div>
-			<label>Психотип:</label>
-			<select id="psychotype">
-				<option value="empath">Эмпат</option>
-				<option value="optimist">Оптимист</option>
-				<option value="rational">Рационалист</option>
-			</select>
-		</div>
-		<div>
-			<label>Сообщение:</label>
-			<input type="text" id="messageInput" placeholder="Напишите ваше сообщение..." style="width: 300px;">
-		</div>
-		<button onclick="testAIChat()">Отправить ИИ</button>
-		
-		<div id="chatResult" style="margin-top: 10px; padding: 10px; background: #f5f5f5; min-height: 50px;">
-		</div>
-	</div>
-	<script>
-async function testAIChat() {
-    const psychotype = document.getElementById('psychotype').value;
-    const message = document.getElementById('messageInput').value;
-    
-    if (!message) {
-        alert('Введите сообщение');
-        return;
-    }
-    
-    // Показываем загрузку
-    document.getElementById('chatResult').innerHTML = '⏳ Отправляем запрос...';
-    
-    try {
-        const response = await fetch('http://localhost:3000/api/chat/ai', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json' 
-            },
-            body: JSON.stringify({
-                message: message,
-                psychotype: psychotype
-            })
-        });
-        
-        // Проверяем статус ответа
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            document.getElementById('chatResult').innerHTML = 
-                `<strong>${data.psychotype}:</strong> ${data.response}`;
-        } else {
-            document.getElementById('chatResult').innerHTML = 
-                `❌ Ошибка: ${data.error}`;
-        }
+document.getElementById('psychotype').value;
+            const provider = document.getElementById('provider').value;
+            const message = document.getElementById('messageInput').value;
             
-    } catch (error) {
-        console.error('Full error:', error);
-        document.getElementById('chatResult').innerHTML = 
-            `❌ Ошибка подключения: ${error.message}<br>
-             🔍 Проверьте консоль сервера и браузера`;
-    }
-}
-</script>
+            if (!message) {
+                alert('Пожалуйста, введите сообщение');
+                return;
+            }
+            
+            // Показываем индикатор печати
+            document.getElementById('typingIndicator').style.display = 'block';
+            document.getElementById('chatResult').innerHTML = '';
 
+            
+            const clientStartTime = Date.now();
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/chat/ai', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json' 
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        psychotype: psychotype,
+                        provider: provider
+                    })
+                });
+                
+                const clientEndTime = Date.now();
+                const clientTime = clientEndTime - clientStartTime;
+
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка! статус: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Скрываем индикатор
+                document.getElementById('typingIndicator').style.display = 'none';
+                
+                if (data.success) {
+                    let resultHTML = `
+                        <div class="result success">
+                            <div style="margin-bottom: 15px;">
+                                <strong>💭 Ответ:</strong> ${data.response}
+
+                            </div>
+                            <div style="color: #666; font-size: 14px;">
+                                <span class="psychotype-badge">${data.psychotype}</span>
+                                <span class="provider-badge">${data.provider}</span>
+                            </div>
+                        </div>
+                        <div class="timing">
+                            <strong>⏱️ Время ответа:</strong>
+                            <div class="timing-grid">
+                                <div class="timing-item">
+                                    <div class="timing-value">${data.timing.api_response_time}ms</div>
+                                    <div>API</div>
+                                </div>
+                                <div class="timing-item">
+
+                                    <div class="timing-value">${data.timing.total_time}ms</div>
+                                    <div>Сервер</div>
+                                </div>
+                                <div class="timing-item">
+                                    <div class="timing-value">${clientTime}ms</div>
+                                    <div>Клиент</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.getElementById('chatResult').innerHTML = resultHTML;
+                } else {
+                    document.getElementById('chatResult').innerHTML = 
+                        `<div class="result error">❌ 
+
+Ошибка: ${data.error}</div>`;
+                }
+                    
+            } catch (error) {
+                document.getElementById('typingIndicator').style.display = 'none';
+                document.getElementById('chatResult').innerHTML = 
+                    `<div class="result error">❌ Ошибка подключения: ${error.message}</div>`;
+            }
+        }
+
+        // Автоматически фокусируемся на поле ввода сообщения
+        document.getElementById('messageInput').focus();
+
+        
+        // Отправка по Enter
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testAIChat();
+            }
+        });
+    </script>
 </body>
 </html>
