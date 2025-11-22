@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
@@ -8,6 +9,7 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// ==================== MIDDLEWARE ====================
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -15,8 +17,11 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname
 
+)));
+
+// ==================== DATABASE CONNECTION ====================
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -25,12 +30,39 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
+// ==================== DEEPSEEK API SETUP ====================
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+
+// Психотипы ИИ
+const PSYCHOTYPES = {
+  empath: {
+    name: 'Эмпат',
+
+    description: 'Сочувствующий и понимающий слушатель',
+    system_prompt: 'Ты - эмпатичный слушатель. Ты внимательно слушаешь, проявляешь сочувствие и понимание. Ты помогаешь пользователю выговориться и почувствовать себя услышанным. Отвечай тепло и поддерживающе.'
+  },
+  optimist: {
+    name: 'Оптимист', 
+    description: 'Позитивный и воодушевляющий',
+    system_prompt: 'Ты - позитивный оптимист. Ты видишь хорошее в любой ситуации и помогаешь пользователю найти позитивные стороны. Ты воодушевляешь и мотивируешь. Отвечай энергично и позитивно.'
+  },
+
+  rational: {
+    name: 'Рационалист',
+    description: 'Логичный и аналитический',
+    system_prompt: 'Ты - рациональный аналитик. Ты помогаешь пользователю разобраться в ситуации логически, анализируешь факты и ищешь практические решения. Отвечай спокойно и разумно.'
+  }
+};
+
+// ==================== DATABASE INITIALIZATION ====================
 async function initializeDatabase() {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
+        username VARCHAR(50) UNIQUE NOT 
+
+NULL,
         email VARCHAR(100) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -44,21 +76,31 @@ async function initializeDatabase() {
         message_text TEXT NOT NULL,
         ai_psychotype VARCHAR(50),
         is_ai_response BOOLEAN DEFAULT FALSE,
-        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        sent_at TIMESTAMP DEFAULT 
+
+CURRENT_TIMESTAMP
       )
     `);
 
-    console.log('Tables created/checked');
+    console.log('✅ Таблицы базы данных созданы/проверены');
+    return true;
   } catch (error) {
-    console.error('Database init error:', error);
+    console.error('❌ Ошибка создания таблиц:', error);
+    return false;
   }
 }
 
+// ==================== API ROUTES ====================
+
+// Регистрация пользователя
 app.post('/api/register', async (req, res) => {
   try {
+
     const { username, email, password } = req.body;
+    
+    // Проверяем обязательные поля
     if (!username || !email || !password) {
-      return res.status(400).json({ error: 'All fields required' });
+      return res.status(400).json({ error: 'Все поля обязательны' });
     }
 
     const saltRounds = 10;
@@ -70,39 +112,48 @@ app.post('/api/register', async (req, res) => {
     );
 
     res.status(201).json({
-      message: 'User registered',
+      message: 'Пользователь успешно зарегистрирован',
       user: result.rows[0]
     });
   } catch (error) {
     if (error.code === '23505') {
-      res.status(400).json({ error: 'User already exists' });
+      res.status(400).json({ error: 'Пользователь с таким именем или email уже существует' });
     } else {
-      console.error('Registration error:', error);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Ошибка регистрации:', error);
+      res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     }
   }
 });
 
+// Вход пользователя
 app.post('/api/login', async (req, res) => {
+
   try {
     const { username, password } = req.body;
+
     if (!username || !password) {
-      return res.status(400).json({ error: 'All fields required' });
+      return res.status(400).json({ error: 'Все поля обязательны' });
     }
 
-    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    const result = await pool.query(
+      'SELECT * FROM users WHERE username = $1',
+      [username]
+    );
+
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
     }
 
     const user = result.rows[0];
+
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    
     if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
     }
 
     res.json({
-      message: 'Login successful',
+      message: 'Вход выполнен успешно',
       user: {
         id: user.id,
         username: user.username,
@@ -111,72 +162,30 @@ app.post('/api/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Ошибка входа:', error);
+
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
 
+// Получить всех пользователей
 app.get('/api/users', async (req, res) => {
   try {
     const result = await pool.query('SELECT id, username, email, created_at FROM users');
     res.json(result.rows);
   } catch (error) {
-    console.error('Users error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Ошибка получения пользователей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
 
-app.get('/api/health', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT NOW()');
-    res.json({ 
-      status: 'OK', 
-      database: 'Connected', 
-      time: result.rows[0].now 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Database connection failed' });
-  }
-});
+// Получить список психотипов
 
-app.get('/', (req, res) => {
-  res.send('Hello! Ushi is working!');
-});
-
-initializeDatabase().then(() => {
-  app.listen(port, () => {
-    console.log('Server running on http://localhost:${port}');
-  });
-});
-
-// DeepSeek API integration
-const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
-
-// Психотипы ИИ
-const PSYCHOTYPES = {
-  empath: {
-    name: 'Эмпат',
-    description: 'Сочувствующий и понимающий слушатель',
-    system_prompt: 'Ты - эмпатичный слушатель. Ты внимательно слушаешь, проявляешь сочувствие и понимание. Ты помогаешь пользователю выговориться и почувствовать себя услышанным. Отвечай тепло и поддерживающе.'
-  },
-  optimist: {
-    name: 'Оптимист', 
-    description: 'Позитивный и воодушевляющий',
-    system_prompt: 'Ты - позитивный оптимист. Ты видишь хорошее в любой ситуации и помогаешь пользователю найти позитивные стороны. Ты воодушевляешь и мотивируешь. Отвечай энергично и позитивно.'
-  },
-  rational: {
-    name: 'Рационалист',
-    description: 'Логичный и аналитический',
-    system_prompt: 'Ты - рациональный аналитик. Ты помогаешь пользователю разобраться в ситуации логически, анализируешь факты и ищешь практические решения. Отвечай спокойно и разумно.'
-  }
-};
-
-// API для получения списка психотипов
 app.get('/api/psychotypes', (req, res) => {
   res.json(PSYCHOTYPES);
 });
 
-// API для чата с ИИ
+// Чат с ИИ
 app.post('/api/chat/ai', async (req, res) => {
   try {
     const { message, psychotype = 'empath' } = req.body;
@@ -188,6 +197,7 @@ app.post('/api/chat/ai', async (req, res) => {
     const selectedPsychotype = PSYCHOTYPES[psychotype] || PSYCHOTYPES.empath;
 
     const response = await fetch(DEEPSEEK_API_URL, {
+
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -207,6 +217,7 @@ app.post('/api/chat/ai', async (req, res) => {
         ],
         max_tokens: 500,
         temperature: 0.7
+
       })
     });
 
@@ -217,10 +228,6 @@ app.post('/api/chat/ai', async (req, res) => {
     const data = await response.json();
     const aiResponse = data.choices[0].message.content;
 
-    // Сохраняем сообщение в базу (позже добавим)
-    // await saveMessage(userId, message, psychotype, false);
-    // await saveMessage(userId, aiResponse, psychotype, true);
-
     res.json({
       success: true,
       response: aiResponse,
@@ -230,8 +237,60 @@ app.post('/api/chat/ai', async (req, res) => {
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({ 
+
       error: 'Ошибка при общении с ИИ',
       details: error.message
     });
   }
 });
+
+// Проверка здоровья сервера
+app.get('/api/health', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.json({ 
+      status: 'OK', 
+      database: 'Connected', 
+      time: result.rows[0].now 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Database connection failed' });
+  }
+});
+
+
+// Главная страница
+app.get('/', (req, res) => {
+  res.send('Привет! Уши на связи! 👂 Система работает!');
+});
+
+// ==================== SERVER START ====================
+async function startServer() {
+  try {
+    console.log('🔄 Инициализация базы данных...');
+    const dbInitialized = await initializeDatabase();
+    
+    if (dbInitialized) {
+      app.listen(port, () => {
+        console.log(`🚀 Сервер запущен на http://localhost:${port}`);
+        console.log(`📊 Доступные 
+
+endpoints:`);
+        console.log(`   GET  /api/health`);
+        console.log(`   GET  /api/psychotypes`);
+        console.log(`   GET  /api/users`);
+        console.log(`   POST /api/register`);
+        console.log(`   POST /api/login`);
+        console.log(`   POST /api/chat/ai`);
+      });
+    } else {
+      console.log('❌ Не удалось инициализировать базу данных. Сервер не запущен.');
+    }
+  } catch (error) {
+    console.error('❌ Ошибка запуска сервера:', error);
+  }
+}
+
+// Запускаем сервер
+
+startServer();
