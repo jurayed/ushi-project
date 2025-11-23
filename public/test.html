@@ -439,7 +439,14 @@
                     <button class="btn-secondary" onclick="loadProviders()">🔄 Обновить провайдеры</button>
                     <button class="btn-secondary" onclick="showLiveEars()">👥 Найти живого слушателя</button>
                 </div>
-                
+
+				<div class="buttons">
+				  <button class="btn-primary" onclick="testAIChat()">💬 Отправить ИИ</button>
+				  <button class="btn-secondary" onclick="loadProviders()">🔄 Обновить провайдеры</button>
+				  <button class="btn-secondary" onclick="toggleEarRegistration()" id="earToggleButton">🎧 Стать слушателем</button>
+				  <button class="btn-primary" onclick="findLiveEar()">👥 Найти живого слушателя</button>
+				</div>			
+				
                 <div id="typingIndicator" class="typing">
                     ⏳ ИИ печатает ответ... Пожалуйста, подождите.
                 </div>
@@ -452,6 +459,20 @@
                     <h3>📊 Результаты</h3>
                     <div id="chatResult"></div>
                 </div>
+				
+				<div id="liveEarsSection" class="hidden">
+				  <h3>🎧 Система живых слушателей</h3>
+				  <div id="earsInfo"></div>
+				  <div id="conversationSection" class="hidden">
+					<h4>💬 Сессия с слушателем</h4>
+					<div id="conversationMessages" style="height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"></div>
+					<div class="control-row">
+					  <input type="text" id="conversationMessageInput" placeholder="Введите сообщение...">
+					  <button onclick="sendConversationMessage()">Отправить</button>
+					</div>
+					<button onclick="closeConversation()" class="btn-secondary">Завершить сессию</button>
+				  </div>
+				</div>
             </div>
         </div>
     </div>
@@ -462,7 +483,9 @@
     let currentToken = null;
     let availableProviders = [];
     let availableModels = {};
-
+	let currentConversationId = null;
+	let isEar = false;
+	
     // ==================== INITIALIZATION ====================
     document.addEventListener('DOMContentLoaded', function() {
         initializeApp();
@@ -608,6 +631,9 @@
         setTimeout(() => {
             document.getElementById('messageInput').focus();
         }, 100);
+		
+		document.getElementById('liveEarsSection').classList.remove('hidden');
+		loadEarsInfo();
     }
 
     function showAuthInterface() {
@@ -688,7 +714,147 @@
         }
     }
 
-    // ==================== AI CHAT FUNCTIONS ====================
+	// ==================== работА с слушателями jurayed====================
+	// Функция для регистрации/удаления себя как слушателя
+	async function toggleEarRegistration() {
+	  try {
+		if (isEar) {
+		  // Удаляем себя из слушателей
+		  const response = await fetch('/api/ears/unregister', {
+			method: 'POST',
+			headers: {
+			  'Authorization': 'Bearer ' + currentToken
+			}
+		  });
+		  if (response.ok) {
+			isEar = false;
+			document.getElementById('earToggleButton').textContent = '🎧 Стать слушателем';
+			showSuccess('Вы больше не слушатель');
+		  }
+		} else {
+		  // Регистрируем как слушателя
+		  const response = await fetch('/api/ears/register', {
+			method: 'POST',
+			headers: {
+			  'Authorization': 'Bearer ' + currentToken
+			}
+		  });
+		  if (response.ok) {
+			isEar = true;
+			document.getElementById('earToggleButton').textContent = '🎧 Перестать быть слушателем';
+			showSuccess('Вы теперь слушатель!');
+		  }
+		}
+	  } catch (error) {
+		showError('Ошибка: ' + error.message);
+	  }
+	}
+
+	// Функция для поиска живого слушателя
+	async function findLiveEar() {
+	  try {
+		const response = await fetch('/api/conversations/find', {
+		  method: 'POST',
+		  headers: {
+			'Authorization': 'Bearer ' + currentToken
+		  }
+		});
+		const data = await response.json();
+		if (response.ok) {
+		  currentConversationId = data.conversation_id;
+		  document.getElementById('conversationSection').classList.remove('hidden');
+		  loadConversationMessages();
+		  showSuccess('Сессия начата!');
+		} else {
+		  showError('Ошибка: ' + data.error);
+		}
+	  } catch (error) {
+		showError('Ошибка: ' + error.message);
+	  }
+	}
+
+	// Функция для отправки сообщения в сессию
+	async function sendConversationMessage() {
+	  const messageInput = document.getElementById('conversationMessageInput');
+	  const message = messageInput.value.trim();
+	  if (!message) return;
+
+	  try {
+		const response = await fetch(`/api/conversations/${currentConversationId}/message`, {
+		  method: 'POST',
+		  headers: {
+			'Content-Type': 'application/json',
+			'Authorization': 'Bearer ' + currentToken
+		  },
+		  body: JSON.stringify({ message })
+		});
+		if (response.ok) {
+		  messageInput.value = '';
+		  loadConversationMessages();
+		} else {
+		  showError('Ошибка отправки сообщения');
+		}
+	  } catch (error) {
+		showError('Ошибка: ' + error.message);
+	  }
+	}
+
+	// Функция для загрузки сообщений сессии
+	async function loadConversationMessages() {
+	  try {
+		const response = await fetch(`/api/conversations/${currentConversationId}/messages`, {
+		  headers: {
+			'Authorization': 'Bearer ' + currentToken
+		  }
+		});
+		const messages = await response.json();
+		const messagesContainer = document.getElementById('conversationMessages');
+		messagesContainer.innerHTML = messages.map(msg => 
+		  `<div><strong>${msg.username}:</strong> ${msg.message_text}</div>`
+		).join('');
+		messagesContainer.scrollTop = messagesContainer.scrollHeight;
+	  } catch (error) {
+		console.error('Ошибка загрузки сообщений:', error);
+	  }
+	}
+
+	// Функция для закрытия сессии
+	async function closeConversation() {
+	  try {
+		const response = await fetch(`/api/conversations/${currentConversationId}/close`, {
+		  method: 'POST',
+		  headers: {
+			'Authorization': 'Bearer ' + currentToken
+		  }
+		});
+		if (response.ok) {
+		  currentConversationId = null;
+		  document.getElementById('conversationSection').classList.add('hidden');
+		  showSuccess('Сессия завершена');
+		}
+	  } catch (error) {
+		showError('Ошибка: ' + error.message);
+	  }
+	}
+
+	// Функция для загрузки информации о доступных слушателях
+	async function loadEarsInfo() {
+	  try {
+		const response = await fetch('/api/ears/available', {
+		  headers: {
+			'Authorization': 'Bearer ' + currentToken
+		  }
+		});
+		const data = await response.json();
+		if (response.ok) {
+		  document.getElementById('earsInfo').innerHTML = `Доступно слушателей: ${data.available_ears}`;
+		}
+	  } catch (error) {
+		console.error('Ошибка загрузки информации о слушателях:', error);
+	  }
+	}
+	
+	// ==================== AI CHAT FUNCTIONS ====================
     async function testAIChat() {
         if (!currentToken) {
             alert('Сначала войдите в систему');

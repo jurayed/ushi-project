@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-
+const liveEarsRoutes = require('./routes/live-ears');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -38,10 +38,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 const authRoutes = require('./routes/auth');
 const aiChatRoutes = require('./routes/ai-chat');
 const providersRoutes = require('./routes/providers');
+const liveEarsRoutes = require('./routes/live-ears');
 
 app.use('/api', authRoutes);
 app.use('/api/chat', aiChatRoutes);
 app.use('/api', providersRoutes);
+app.use('/api', liveEarsRoutes);
 
 // Serve the main HTML file
 app.get('/', (req, res) => {

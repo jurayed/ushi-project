@@ -46,7 +46,49 @@ async function initializeDatabase() {
     `);
     console.log('✅ Таблица messages создана/проверена');
 
-    console.log('✅ Все таблицы базы данных созданы/проверены');
+    // Таблица слушателей (добровольцев)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ears (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) UNIQUE NOT NULL,
+        is_available BOOLEAN DEFAULT TRUE,
+        rating DECIMAL(3,2) DEFAULT 5.0,
+        sessions_completed INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Таблица ears создана/проверена');
+	
+	// Таблица сессий (разговоров)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) NOT NULL,
+        ear_id INTEGER REFERENCES ears(id) NOT NULL,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ended_at TIMESTAMP,
+        user_rating INTEGER,
+        ear_rating INTEGER
+      )
+    `);
+    console.log('✅ Таблица conversations создана/проверена');
+
+    // Таблица сообщений в сессиях
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversation_messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER REFERENCES conversations(id) NOT NULL,
+        sender_id INTEGER REFERENCES users(id) NOT NULL,
+        message_text TEXT NOT NULL,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT FALSE
+      )
+    `);
+    console.log('✅ Таблица conversation_messages создана/проверена');
+	
+	console.log('✅ Все таблицы базы данных созданы/проверены');
     return true;
   } catch (error) {
     console.error('❌ Критическая ошибка базы данных:', error);
