@@ -27,11 +27,11 @@ class RedisSchema {
 
     // Активные слушатели (Set)
     async addActiveListener(userId) {
-        await this.redis.client.sAdd('active_listeners', userId);
+        await this.redis.client.sAdd('active_listeners', userId.toString());
     }
 
     async removeActiveListener(userId) {
-        await this.redis.client.sRem('active_listeners', userId);
+        await this.redis.client.sRem('active_listeners', userId.toString());
     }
 
     async getActiveListeners() {
@@ -39,7 +39,7 @@ class RedisSchema {
     }
 
     async isActiveListener(userId) {
-        return await this.redis.client.sIsMember('active_listeners', userId);
+        return await this.redis.client.sIsMember('active_listeners', userId.toString());
     }
 
     // Активные разговоры (Set)
@@ -62,44 +62,43 @@ class RedisSchema {
         const onlineKey = 'users:online';
         const profileKey = this.getUserProfileKey(userId);
         
-        await this.redis.client.hSet(onlineKey, userId, socketId);
+        await this.redis.client.hSet(onlineKey, userId.toString(), socketId);
         await this.redis.client.set(profileKey, JSON.stringify(userData));
         
-        // TTL 1 час для онлайна, 1 день для профиля
-        await this.redis.client.expire(`${onlineKey}:${userId}`, 3600);
+        // TTL 1 день для профиля
         await this.redis.client.expire(profileKey, 86400);
     }
 
     async setUserOffline(userId) {
         const onlineKey = 'users:online';
-        await this.redis.client.hDel(onlineKey, userId);
+        await this.redis.client.hDel(onlineKey, userId.toString());
         await this.removeActiveListener(userId);
         await this.redis.client.del(this.getListenerAvailableKey(userId));
     }
 
     async getUserSocket(userId) {
-        return await this.redis.client.hGet('users:online', userId);
+        return await this.redis.client.hGet('users:online', userId.toString());
     }
 
     async getUserProfile(userId) {
-        const data = await this.redis.client.get(this.getUserProfileKey(userId));
+        const data = await this.redis.client.get(this.getUserProfileKey(userId.toString()));
         return data ? JSON.parse(data) : null;
     }
 
     // Доступные слушатели (Hash)
     async setListenerAvailable(userId, listenerData) {
-        const listenerKey = this.getListenerAvailableKey(userId);
+        const listenerKey = this.getListenerAvailableKey(userId.toString());
         await this.redis.client.set(listenerKey, JSON.stringify(listenerData));
         await this.redis.client.expire(listenerKey, 3600); // 1 час TTL
     }
 
     async getListenerData(userId) {
-        const data = await this.redis.client.get(this.getListenerAvailableKey(userId));
+        const data = await this.redis.client.get(this.getListenerAvailableKey(userId.toString()));
         return data ? JSON.parse(data) : null;
     }
 
     async removeListenerAvailable(userId) {
-        await this.redis.client.del(this.getListenerAvailableKey(userId));
+        await this.redis.client.del(this.getListenerAvailableKey(userId.toString()));
     }
 
     // ==================== SORTED SETS ====================

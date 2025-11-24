@@ -481,7 +481,8 @@
 	let currentConversationId = null;
 	let isEar = false;
 	let socket = null;
-    // ==================== INITIALIZATION ====================
+    
+	// ==================== INITIALIZATION ====================
     document.addEventListener('DOMContentLoaded', function() {
         initializeApp();
     });
@@ -509,81 +510,81 @@
     }
 
     // ==================== AUTHENTICATION FUNCTIONS ====================
-    async function login() {
-        const username = document.getElementById('loginUsername').value.trim();
-        const password = document.getElementById('loginPassword').value;
+	async function login() {
+		const username = document.getElementById('loginUsername').value.trim();
+		const password = document.getElementById('loginPassword').value;
 
-        if (!validateAuthFields(username, password)) {
-            return;
-        }
+		if (!validateAuthFields(username, password)) {
+			return;
+		}
 
-        showLoading('Вход в систему...');
+		showLoading('Вход в систему...');
 
-        try {
-            const response = await fetch('http://localhost:3000/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, password })
-            });
+		try {
+			const response = await fetch('/api/login', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ username, password })
+			});
 
-            const data = await response.json();
+			const data = await response.json();
 
-            if (response.ok) {
-                currentToken = data.token;
-                currentUser = data.user;
-                localStorage.setItem('ushi_token', data.token);
-                showMainInterface();
-                showSuccess('Вход выполнен успешно!');
-            } else {
-                showError('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
-            }
-        } catch (error) {
-            showError('Ошибка сети: ' + error.message);
-        } finally {
-            hideLoading();
-        }
-    }
+			if (response.ok) {
+				currentToken = data.token;
+				currentUser = data.user;
+				localStorage.setItem('ushi_token', data.token);
+				showMainInterface();
+				showSuccess('Вход выполнен успешно!');
+			} else {
+				showError('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
+			}
+		} catch (error) {
+			showError('Ошибка сети: ' + error.message);
+		} finally {
+			hideLoading();
+		}
+	}
 
-    async function register() {
-        const username = document.getElementById('regUsername').value.trim();
-        const email = document.getElementById('regEmail').value.trim();
-        const password = document.getElementById('regPassword').value;
+	async function register() {
+		const username = document.getElementById('regUsername').value.trim();
+		const email = document.getElementById('regEmail').value.trim();
+		const password = document.getElementById('regPassword').value;
 
-        if (!validateRegFields(username, email, password)) {
-            return;
-        }
+		if (!validateRegFields(username, email, password)) {
+			return;
+		}
 
-        showLoading('Регистрация...');
+		showLoading('Регистрация...');
 
-        try {
-            const response = await fetch('http://localhost:3000/api/register', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, email, password })
-            });
+		try {
+			const response = await fetch('/api/register', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ username, email, password })
+			});
 
-            const data = await response.json();
+			const data = await response.json();
 
-            if (response.ok) {
-                showSuccess('Регистрация успешна! Теперь войдите в систему.');
-                showTab('login');
-                // Очищаем поля регистрации
-                document.getElementById('regUsername').value = '';
-                document.getElementById('regEmail').value = '';
-                document.getElementById('regPassword').value = '';
-            } else {
-                showError('Ошибка регистрации: ' + (data.error || 'Неизвестная ошибка'));
-            }
-        } catch (error) {
-            showError('Ошибка сети: ' + error.message);
-        } finally {
-            hideLoading();
-        }
-    }
+			if (response.ok) {
+				showSuccess('Регистрация успешна! Теперь войдите в систему.');
+				showTab('login');
+				// Очищаем поля регистрации
+				document.getElementById('regUsername').value = '';
+				document.getElementById('regEmail').value = '';
+				document.getElementById('regPassword').value = '';
+			} else {
+				showError('Ошибка регистрации: ' + (data.error || 'Неизвестная ошибка'));
+			}
+		} catch (error) {
+			showError('Ошибка сети: ' + error.message);
+		} finally {
+			hideLoading();
+		}
+	}
 
     async function checkAuth() {
         try {
@@ -643,15 +644,17 @@
 			document.getElementById('earToggleButton').textContent = '🎧 Перестать быть слушателем';
 			showSuccess('Вы теперь слушатель!');
 		});
-
+		
 		socket.on('listener_unregistered', (data) => {
+			console.log('✅ Listener unregistered:', data);
 			isEar = false;
 			document.getElementById('earToggleButton').textContent = '🎧 Стать слушателем';
 			showSuccess('Вы больше не слушатель');
 		});
-
-		socket.on('error', (data) => {
-			showError(data.message);
+		
+		socket.on('error', (error) => {
+			console.error('Socket error:', error);
+			showError('Socket error: ' + error.message);
 		});
 		
         // Фокус на поле ввода сообщения
@@ -749,26 +752,30 @@
         return;
     }
 
+    console.log('🔄 Toggling ear registration, current isEar:', isEar);
+    
     try {
         if (isEar) {
-            // Отправляем событие отмены регистрации
+            console.log('➖ Unregistering as listener...');
             socket.emit('unregister_listener', {
                 userId: currentUser.id
             });
         } else {
-            // Отправляем событие регистрации
+            console.log('➕ Registering as listener...');
             socket.emit('register_listener', {
                 userId: currentUser.id,
                 userData: {
                     username: currentUser.username,
-                    psychotype: 'empath' // или другое значение, которое можно выбрать
+                    email: currentUser.email,
+                    psychotype: 'empath'
                 }
             });
         }
     } catch (error) {
+        console.error('❌ Toggle error:', error);
         showError('Ошибка: ' + error.message);
     }
-}
+	}	
 
 	// Функция для поиска живого слушателя
 	async function findLiveEar() {
