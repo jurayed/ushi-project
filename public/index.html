@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 Уши - Платформа поддержки</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Уши - Платформа поддержки</h1>
+            <p>Выговорись и получи поддержку</p>
+        </div>
+        
+        <div class="content">
+            <!-- Секция аутентификации -->
+            <div id="authSection" class="auth-section">
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="showTab('login')">Вход</button>
+                    <button class="tab-button" onclick="showTab('register')">Регистрация</button>
+                </div>
+                
+                <!-- Форма входа -->
+                <div id="loginForm" class="auth-form">
+                    <h3>Вход в систему</h3>
+                    <div class="form-group">
+                        <label for="loginUsername">Имя пользователя:</label>
+                        <input type="text" id="loginUsername" placeholder="Введите ваш username">
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Пароль:</label>
+                        <input type="password" id="loginPassword" placeholder="Введите ваш пароль">
+                    </div>
+                    <button class="btn-primary" onclick="login()">Войти</button>
+                </div>
+                
+                <!-- Форма регистрации -->
+                <div id="registerForm" class="auth-form hidden">
+                    <h3>Регистрация</h3>
+                    <div class="form-group">
+                        <label for="regUsername">Имя пользователя:</label>
+                        <input type="text" id="regUsername" placeholder="Придумайте username">
+                    </div>
+                    <div class="form-group">
+                        <label for="regEmail">Email:</label>
+                        <input type="email" id="regEmail" placeholder="Введите ваш email">
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Пароль:</label>
+                        <input type="password" id="regPassword" placeholder="Придумайте пароль">
+                    </div>
+                    <button class="btn-primary" onclick="register()">Зарегистрироваться</button>
+                </div>
+            </div>
+            
+            <!-- ОСНОВНОЙ ИНТЕРФЕЙС (добавь этот блок) -->
+            <div id="mainInterface" class="hidden">
+                <div class="user-info">
+                    <h3>Добро пожаловать, <span id="userName"></span>!</h3>
+                    <button class="btn-secondary" onclick="logout()">Выйти</button>
+                </div>
+                
+                <!-- Интерфейс чата -->
+                <div class="control-group">
+                    <h3>🎭 Настройки чата</h3>
+                    
+                    <div class="control-row">
+                        <label for="provider">AI Провайдер:</label>
+                        <select id="provider">
+                            <!-- Опции загружаются через JavaScript -->
+                        </select>
+                    </div>
+                    
+                    <div class="control-row">
+                        <label for="model">Модель:</label>
+                        <select id="model">
+                            <!-- Опции загружаются через JavaScript -->
+                        </select>
+                    </div>
+                    
+                    <div class="control-row">
+                        <label for="psychotype">Психотип:</label>
+                        <select id="psychotype">
+                            <option value="empath">Эмпат 🤗</option>
+                            <option value="optimist">Оптимист 🌟</option>
+                            <option value="rational">Рационалист 🧠</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-row">
+                        <label for="messageInput">Сообщение:</label>
+                        <input type="text" id="messageInput" placeholder="Напишите ваше сообщение...">
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useStreaming" checked>
+                        <label for="useStreaming" style="min-width: auto; font-weight: normal;">
+                            Использовать потоковую передачу (быстрее)
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="buttons">
+                    <button class="btn-primary" onclick="testAIChat()">💬 Отправить ИИ</button>
+                    <button class="btn-secondary" onclick="loadProviders()">🔄 Обновить провайдеры</button>
+                    <button class="btn-secondary" onclick="toggleEarRegistration()" id="earToggleButton">🎧 Стать слушателем</button>
+                    <button class="btn-primary" onclick="findLiveEar()">👥 Найти живого слушателя</button>
+                </div>
+                
+                <div id="typingIndicator" class="typing">
+                    ⏳ ИИ печатает ответ... Пожалуйста, подождите.
+                </div>
+
+                <div id="streamIndicator" class="stream-indicator">
+                    🔄 Потоковая передача активна...
+                </div>
+                
+                <div class="result-area">
+                    <h3>📊 Результаты</h3>
+                    <div id="chatResult"></div>
+                </div>
+                
+                <div id="liveEarsSection">
+                    <h3>🎧 Система живых слушателей</h3>
+                    <div id="earsInfo"></div>
+                    <div id="conversationSection" class="hidden">
+                        <h4>💬 Сессия с слушателем</h4>
+                        <div id="conversationMessages" class="conversation-messages"></div>
+                        <div class="control-row">
+                            <input type="text" id="conversationMessageInput" placeholder="Введите сообщение...">
+                            <button onclick="sendConversationMessage()">Отправить</button>
+                        </div>
+                        <button onclick="closeConversation()" class="btn-secondary">Завершить сессию</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подключаем JavaScript -->
+    <!-- В конце body заменить подключение скриптов на: -->
+	<script type="module" src="js/utils.js"></script>
+	<script type="module" src="js/ui.js"></script>
+	<script type="module" src="js/auth.js"></script>
+	<script type="module" src="js/ai-chat.js"></script>
+	<script type="module" src="js/live-listeners.js"></script>
+	<script type="module" src="js/socket-client.js"></script>
+	<script src="js/app.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+</body>
+</html>
