@@ -2,9 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 3000;
+
+// ==================== SERVICES ====================
+const RedisService = require('./services/redis');
+const SocketService = require('./services/socket-service');
 
 // ==================== ENVIRONMENT VARIABLES CHECK ====================
 console.log('🔧 Проверка переменных окружения:');
@@ -45,17 +51,29 @@ app.use('/api/chat', aiChatRoutes);
 app.use('/api', providersRoutes);
 app.use('/api', liveEarsRoutes);
 
+// ==================== REDIS STATISTICS ROUTE ====================
+app.get('/api/stats', async (req, res) => {
+    try {
+        const stats = await RedisService.getStats();
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ==================== TEMPORARY ROUTES FOR TESTING ====================
 // Эти маршруты временные для тестирования фронтенда
 
 // Маршрут для доступных "ушей"
-app.get('/api/ears/available', (req, res) => {
-    console.log('✅ Запрос на доступные уши');
-    res.json([
-        { id: 1, name: "Ухо 1", status: "available", type: "free" },
-        { id: 2, name: "Ухо 2", status: "available", type: "premium" },
-        { id: 3, name: "Ухо 3", status: "available", type: "free" }
-    ]);
+app.get('/api/ears/available', async (req, res) => {
+    try {
+        console.log('✅ Запрос на доступные уши');
+        const availableListeners = await RedisService.getAvailableListeners();
+        res.json(availableListeners);
+    } catch (error) {
+        console.error('❌ Ошибка получения слушателей:', error);
+        res.status(500).json({ error: 'Ошибка получения списка слушателей' });
+    }
 });
 
 // Маршрут для поиска разговоров
@@ -70,18 +88,28 @@ app.post('/api/conversations/find', (req, res) => {
 });
 
 // Маршрут для информации о слушателях
-app.get('/api/ears/info', (req, res) => {
-    res.json({ 
-        totalListeners: 15,
-        activeNow: 3,
-        availableEars: 2,
-        waitingUsers: 1
-    });
+app.get('/api/ears/info', async (req, res) => {
+    try {
+        const stats = await RedisService.getStats();
+        res.json({ 
+            totalListeners: stats.totalListeners,
+            activeNow: stats.totalOnline,
+            availableEars: stats.totalListeners,
+            waitingUsers: 0
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Serve the main HTML file
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test1.html'));
+});
+
+// Serve ngrok test page
+app.get('/ngrok-test', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'ngrok-test.html'));
 });
 
 // ==================== SERVER START ====================
@@ -94,11 +122,36 @@ async function startServer() {
     const dbInitialized = await initializeDatabase();
     
     if (dbInitialized) {
-      app.listen(port, '0.0.0.0', () => {  // ← ИЗМЕНИ ЭТУ СТРОКУ
+      // Инициализируем Socket.IO
+      SocketService.initialize(server);
+      
+      server.listen(port, '0.0.0.0', () => {
         console.log(`🚀 Сервер запущен на http://localhost:${port}`);
-        console.log(`🌐 Доступен извне на http://ТВОЙ_IP:${port}`); // ← ДОБАВЬ ЭТУ СТРОКУ
+        console.log(`🌐 Доступен извне на http://ТВОЙ_IP:${port}`);
         console.log(`📊 Модульная структура активирована`);
-        // ... остальной вывод оставь как есть
+        console.log(`🔌 WebSocket сервер запущен`);
+        console.log(`📊 Доступные endpoints:`);
+        console.log(`   GET  /api/health`);
+        console.log(`   GET  /api/providers`);
+        console.log(`   GET  /api/psychotypes`);
+        console.log(`   GET  /api/users`);
+        console.log(`   POST /api/register`);
+        console.log(`   POST /api/login`);
+        console.log(`   POST /api/chat/ai`);
+        console.log(`   POST /api/chat/ai/stream`);
+        console.log(`   GET  /api/stats`);
+        console.log(`   GET  /api/ears/available`);
+        
+        // Показываем доступные провайдеры и модели
+        console.log(`🤖 Доступные AI провайдеры и модели:`);
+        Object.entries(AI_PROVIDERS).forEach(([key, provider]) => {
+            console.log(`   - ${provider.name}: ${provider.enabled ? '✅' : '❌'}`);
+            if (provider.enabled) {
+                Object.entries(provider.models).forEach(([modelKey, modelInfo]) => {
+                    console.log(`     * ${modelKey}: ${modelInfo.name} (${modelInfo.context} tokens)`);
+                });
+            }
+        });
       });
     } else {
       console.log('❌ Не удалось инициализировать базу данных. Сервер не запущен.');
