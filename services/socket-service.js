@@ -122,7 +122,40 @@ class SocketService {
                     console.error('❌ Ошибка register_listener:', error);
                     socket.emit('error', { message: `Ошибка регистрации слушателя: ${error.message}` });
                 }
-            });            
+				
+            }); 
+					
+			// WebRTC handlers - ДОБАВЬТЕ ЭТОТ БЛОК КОДА
+			socket.on('start-call', (data) => {
+				console.log(`📞 Пользователь ${socket.id} звонит пользователю ${data.to}`);
+				socket.to(data.to).emit('incoming-call', {
+					from: socket.id,
+					signal: data.signal,
+					withVideo: data.withVideo
+				});
+			});
+
+			socket.on('webrtc-signal', (data) => {
+				socket.to(data.to).emit('webrtc-signal', {
+					from: socket.id,
+					signal: data.signal
+				});
+			});
+
+			socket.on('call-rejected', (data) => {
+				console.log(`❌ Пользователь ${socket.id} отклонил звонок от ${data.to}`);
+				socket.to(data.to).emit('call-rejected', {
+					from: socket.id
+				});
+			});
+
+			socket.on('end-call', (data) => {
+				console.log(`📞 Пользователь ${socket.id} завершил звонок`);
+				socket.to(data.to).emit('call-ended', {
+					from: socket.id
+				});
+			});		
+								
         });
     }
 }

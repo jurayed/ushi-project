@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const http = require('http');
 
+const { authenticateToken } = require('./middleware/auth');
 const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
@@ -20,6 +21,7 @@ console.log('   DB_PORT:', process.env.DB_PORT);
 console.log('   DB_NAME:', process.env.DB_NAME);
 console.log('   DB_USER:', process.env.DB_USER);
 console.log('   JWT_SECRET:', process.env.JWT_SECRET ? '***установлен***' : '❌ отсутствует');
+console.log('🔧 Детальная проверка AI провайдеров:');
 console.log('   DEEPSEEK_API_KEY:', process.env.DEEPSEEK_API_KEY ? '***установлен***' : '❌ отсутствует');
 console.log('   OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '***установлен***' : '❌ отсутствует');
 console.log('   GOOGLE_API_KEY:', process.env.GOOGLE_API_KEY ? '***установлен***' : '❌ отсутствует');
@@ -51,6 +53,24 @@ app.use('/api/chat', aiChatRoutes);
 app.use('/api', providersRoutes);
 app.use('/api', liveEarsRoutes);
 
+app.get('/api/profile', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, username, email, created_at FROM users WHERE id = $1',
+            [req.user.id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка получения профиля:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    }
+});
+
 // ==================== REDIS STATISTICS ROUTE ====================
 app.get('/api/stats', async (req, res) => {
     try {
@@ -61,55 +81,28 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-// ==================== TEMPORARY ROUTES FOR TESTING ====================
-// Эти маршруты временные для тестирования фронтенда
-
-// Маршрут для доступных "ушей"
-app.get('/api/ears/available', async (req, res) => {
-    try {
-        console.log('✅ Запрос на доступные уши');
-        const availableListeners = await RedisService.getAvailableListeners();
-        res.json(availableListeners);
-    } catch (error) {
-        console.error('❌ Ошибка получения слушателей:', error);
-        res.status(500).json({ error: 'Ошибка получения списка слушателей' });
-    }
-});
-
-// Маршрут для поиска разговоров
-app.post('/api/conversations/find', (req, res) => {
-    console.log('✅ Поиск разговора', req.body);
-    res.json({ 
-        found: true, 
-        conversationId: "conv_" + Date.now(),
-        earId: 1,
-        earName: "Ухо 1"
-    });
-});
-
-// Маршрут для информации о слушателях
-app.get('/api/ears/info', async (req, res) => {
-    try {
-        const stats = await RedisService.getStats();
-        res.json({ 
-            totalListeners: stats.totalListeners,
-            activeNow: stats.totalOnline,
-            availableEars: stats.totalListeners,
-            waitingUsers: 0
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // Serve the main HTML file
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'test1.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Serve ngrok test page
 app.get('/ngrok-test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'ngrok-test.html'));
+});
+
+// Serve test calls page
+app.get('/test-calls', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'test-calls.html'));
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
 });
 
 // ==================== SERVER START ====================

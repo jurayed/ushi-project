@@ -22,6 +22,10 @@ export function showMainInterface() {
     // Загружаем информацию о слушателях
     loadEarsInfo();
     
+	if (window.loadProviders) {
+        window.loadProviders();
+    }
+	
     // Фокус на поле ввода сообщения
     setTimeout(() => {
         const messageInput = document.getElementById('messageInput');
@@ -75,3 +79,9 @@ export function showLoading(message = 'Загрузка...') {
 export function hideLoading() {
     // Скрыть индикатор загрузки
 }
+
+window.showMainInterface = showMainInterface;
+window.showAuthInterface = showAuthInterface;
+window.showError = showError;
+window.showSuccess = showSuccess;
+window.showInfo = showInfo;

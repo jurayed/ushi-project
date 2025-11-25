@@ -1,5 +1,6 @@
 // public/js/socket-client.js
 import { setupSocketListeners, loadEarsInfo } from './live-listeners.js';
+import { setupWebRTCListeners } from './webrtc.js';
 
 export async function initializeSocket() {
     if (!window.currentUser) {
@@ -25,6 +26,7 @@ export async function initializeSocket() {
 
             // Загружаем информацию о слушателях после подключения
             loadEarsInfo();
+			setupWebRTCListeners(); 
         });
 
         window.socket.on('disconnect', () => {
