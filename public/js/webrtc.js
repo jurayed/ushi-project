@@ -59,10 +59,10 @@ if (typeof window.WebRTCManager !== 'undefined') {
                 this.isCalling = true;
                 this.callType = withVideo ? 'video' : 'audio';
                 this.currentTargetUserId = targetUserId;
-                
+
                 await this.initLocalStream(withVideo, true);
-                
-                // Создаем Peer соединение
+
+                // Создаем Peer соединение (initiator: true)
                 this.peer = new SimplePeer({
                     initiator: true,
                     trickle: false,
@@ -76,8 +76,9 @@ if (typeof window.WebRTCManager !== 'undefined') {
                 });
 
                 this.peer.on('signal', (data) => {
-                    window.socket.emit('start-call', {
-                        to: targetUserId,
+                    // Отправляем сигнал вызова
+                    window.socket.emit('call_user', {
+                        toUserId: targetUserId,
                         signal: data,
                         withVideo: withVideo
                     });
@@ -117,10 +118,11 @@ if (typeof window.WebRTCManager !== 'undefined') {
 
                 this.isInCall = true;
                 this.callType = callData.withVideo ? 'video' : 'audio';
-                this.currentTargetUserId = callData.from;
-                
+                this.currentTargetUserId = callData.fromUserId;
+
                 await this.initLocalStream(callData.withVideo, true);
 
+                // Создаем Peer соединение (initiator: false)
                 this.peer = new SimplePeer({
                     initiator: false,
                     trickle: false,
@@ -134,8 +136,9 @@ if (typeof window.WebRTCManager !== 'undefined') {
                 });
 
                 this.peer.on('signal', (data) => {
-                    window.socket.emit('webrtc-signal', {
-                        to: callData.from,
+                    // Отправляем сигнал принятия вызова
+                    window.socket.emit('answer_call', {
+                        toUserId: callData.fromUserId,
                         signal: data
                     });
                 });
@@ -156,6 +159,7 @@ if (typeof window.WebRTCManager !== 'undefined') {
                     this.endCall();
                 });
 
+                // Применяем сигнал от звонящего
                 this.peer.signal(callData.signal);
                 this.showCallInterface(false);
 
@@ -166,9 +170,26 @@ if (typeof window.WebRTCManager !== 'undefined') {
             }
         }
 
+        // Обработка принятия звонка (для инициатора)
+        handleCallAccepted(signal) {
+            if (this.peer) {
+                this.peer.signal(signal);
+                showSuccess('Собеседник принял вызов!');
+            }
+        }
+
+        // Обработка ICE кандидата
+        handleIceCandidate(candidate) {
+            // SimplePeer с trickle: false обычно обрабатывает кандидаты внутри signal
+            // Но если мы решим использовать trickle: true, это пригодится
+            // В данной реализации мы используем full signal exchange, так что это может быть не нужно
+            // если signal содержит все кандидаты.
+            // Оставим пока пустым или реализуем если перейдем на trickle
+        }
+
         // Отклонить звонок
-        rejectCall(callData) {
-            window.socket.emit('call-rejected', { to: callData.from });
+        rejectCall(targetUserId) {
+            window.socket.emit('reject_call', { toUserId: targetUserId });
             this.hideCallInterface();
             showSuccess('Звонок отклонен');
         }
@@ -183,11 +204,11 @@ if (typeof window.WebRTCManager !== 'undefined') {
             this.isCalling = false;
             this.isInCall = false;
             this.hideCallInterface();
-            
+
             if (window.socket && this.currentTargetUserId) {
-                window.socket.emit('end-call', { to: this.currentTargetUserId });
+                window.socket.emit('end_call', { toUserId: this.currentTargetUserId });
             }
-            
+
             showSuccess('Звонок завершен');
         }
 
@@ -233,14 +254,16 @@ if (typeof window.WebRTCManager !== 'undefined') {
             callInterface.id = 'callInterface';
             callInterface.className = 'call-interface hidden';
             callInterface.innerHTML = `
-                <div class="call-modal">
-                    <h3 id="callStatus">Звонок</h3>
-                    <div class="video-container">
-                        <video id="remoteVideo" autoplay playsinline></video>
-                        <video id="localVideo" autoplay playsinline muted></video>
+                <div class="call-modal glass-panel">
+                    <h3 id="callStatus" style="margin-bottom: 20px;">Звонок</h3>
+                    <div class="video-container" style="background: black; border-radius: 10px; overflow: hidden; margin-bottom: 20px;">
+                        <video id="remoteVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+                        <video id="localVideo" autoplay playsinline muted style="position: absolute; bottom: 20px; right: 20px; width: 120px; height: 90px; border: 2px solid white; border-radius: 8px; object-fit: cover;"></video>
                     </div>
                     <div class="call-controls">
-                        <button id="endCallButton" class="btn-danger">Завершить звонок</button>
+                        <button id="endCallButton" class="btn btn-danger btn-lg rounded-circle" style="width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                            <i class="fas fa-phone-slash"></i>
+                        </button>
                     </div>
                 </div>
             `;
@@ -253,7 +276,7 @@ if (typeof window.WebRTCManager !== 'undefined') {
             return callInterface;
         }
 
-        // Запись аудиосообщения
+        // Запись аудиосообщения (оставляем старую функциональность)
         async startAudioRecording() {
             try {
                 if (!RecordRTC) {
@@ -281,13 +304,13 @@ if (typeof window.WebRTCManager !== 'undefined') {
                     this.mediaRecorder.stopRecording(() => {
                         const audioBlob = this.mediaRecorder.getBlob();
                         this.isRecording = false;
-                        
+
                         // Останавливаем все треки
                         const stream = this.mediaRecorder.getBlob().stream;
                         if (stream && stream.getTracks) {
                             stream.getTracks().forEach(track => track.stop());
                         }
-                        
+
                         resolve(audioBlob);
                     });
                 } else {
@@ -305,53 +328,69 @@ if (typeof window.WebRTCManager !== 'undefined') {
 export function setupWebRTCListeners() {
     if (!window.socket) return;
 
-    window.socket.on('incoming-call', (data) => {
-        const accept = confirm(`Входящий ${data.withVideo ? 'видео' : 'аудио'} звонок от пользователя ${data.from}. Принять?`);
+    // Входящий звонок
+    window.socket.on('incoming_call', (data) => {
+        console.log('📞 Incoming call:', data);
+        // data: { fromUserId, signal, withVideo }
+
+        // Можно добавить звук звонка здесь
+
+        const accept = confirm(`Входящий ${data.withVideo ? 'видео' : 'аудио'} звонок. Принять?`);
         if (accept) {
             window.webrtcManager.acceptCall(data);
         } else {
-            window.webrtcManager.rejectCall(data);
+            window.webrtcManager.rejectCall(data.fromUserId);
         }
     });
 
-    window.socket.on('webrtc-signal', (data) => {
-        if (window.webrtcManager.peer) {
-            window.webrtcManager.peer.signal(data.signal);
-        }
+    // Звонок принят собеседником
+    window.socket.on('call_accepted', (data) => {
+        console.log('✅ Call accepted:', data);
+        // data: { fromUserId, signal }
+        window.webrtcManager.handleCallAccepted(data.signal);
     });
 
-    window.socket.on('call-ended', () => {
+    // Звонок отклонен
+    window.socket.on('call_rejected', (data) => {
+        console.log('❌ Call rejected:', data);
+        showError('Собеседник отклонил звонок');
         window.webrtcManager.endCall();
     });
 
-    window.socket.on('call-rejected', () => {
-        showError('Звонок отклонен');
+    // Звонок завершен
+    window.socket.on('call_ended', (data) => {
+        console.log('🛑 Call ended:', data);
+        showSuccess('Звонок завершен собеседником');
         window.webrtcManager.endCall();
+    });
+
+    // ICE кандидаты (если будем использовать trickle)
+    window.socket.on('ice_candidate', (data) => {
+        window.webrtcManager.handleIceCandidate(data.candidate);
     });
 }
 
 // Глобальные функции для вызова из HTML
-window.startAudioCall = function() {
-    // Для демонстрации звоним сами себе
-    // В реальном приложении нужно выбрать пользователя из списка
-    const targetUserId = window.socket?.id;
+window.startAudioCall = function () {
+    const targetUserId = window.currentPartnerId;
     if (targetUserId) {
         window.webrtcManager.startCall(targetUserId, false);
     } else {
-        showError('Socket не подключен');
+        showError('Выберите собеседника для звонка');
     }
 };
 
-window.startVideoCall = function() {
-    const targetUserId = window.socket?.id;
+window.startVideoCall = function () {
+    const targetUserId = window.currentPartnerId;
     if (targetUserId) {
         window.webrtcManager.startCall(targetUserId, true);
     } else {
-        showError('Socket не подключен');
+        showError('Выберите собеседника для звонка');
     }
 };
 
-window.startAudioMessage = async function() {
+// ... (оставляем функции для аудиосообщений без изменений)
+window.startAudioMessage = async function () {
     try {
         const audioBlob = await recordAudioMessage();
         if (audioBlob) {
@@ -371,10 +410,10 @@ async function recordAudioMessage() {
     return new Promise(async (resolve, reject) => {
         try {
             await window.webrtcManager.startAudioRecording();
-            
+
             const recordTime = 5; // секунд
             let timeLeft = recordTime;
-            
+
             const recordIndicator = document.createElement('div');
             recordIndicator.className = 'record-indicator';
             recordIndicator.innerHTML = `
@@ -389,29 +428,29 @@ async function recordAudioMessage() {
                 </div>
             `;
             document.body.appendChild(recordIndicator);
-            
+
             // Таймер обратного отсчета
             const timer = setInterval(() => {
                 timeLeft--;
                 recordIndicator.querySelector('div:nth-child(2)').textContent = `${timeLeft} сек`;
-                
+
                 if (timeLeft <= 0) {
                     clearInterval(timer);
                     stopRecording();
                 }
             }, 1000);
-            
+
             // Функция для остановки записи
-            const stopRecording = async function() {
+            const stopRecording = async function () {
                 clearInterval(timer);
                 const audioBlob = await window.webrtcManager.stopAudioRecording();
                 document.body.removeChild(recordIndicator);
                 resolve(audioBlob);
             };
-            
+
             // Назначаем обработчик на кнопку
             document.getElementById('stopRecordingBtn').addEventListener('click', stopRecording);
-            
+
         } catch (error) {
             reject(error);
         }

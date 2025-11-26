@@ -131,7 +131,7 @@
                             style="flex: 1;">
 
                         <button class="btn btn-icon btn-primary" onclick="testAIChat()">
-                            <i class="fas fa-paper-plane"></i>
+                            <i class="fas fa-envelope"></i>
                         </button>
 
                         <div class="voice-controls" style="display: inline-flex; gap: 5px;">
@@ -201,7 +201,7 @@
                                 <input type="text" id="conversationMessageInput" class="form-input"
                                     placeholder="Сообщение..." style="flex: 1;">
                                 <button class="btn btn-icon btn-primary" onclick="sendConversationMessage()">
-                                    <i class="fas fa-paper-plane"></i>
+                                    <i class="fas fa-envelope"></i>
                                 </button>
                                 <div class="voice-controls" style="display: inline-flex; gap: 5px;">
                                     <button id="conversationRecordButton" class="btn btn-secondary"
@@ -240,6 +240,7 @@
 
     <!-- Подключите webrtc.js -->
     <script type="module" src="js/webrtc.js"></script>
+    <script type="module" src="js/chat-enhancements.js"></script>
 
     <!-- Стили для звонков -->
     <style>

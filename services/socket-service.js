@@ -159,38 +159,70 @@ class SocketService {
             });
 
             // WebRTC handlers
-            socket.on('start-call', (data) => {
-                console.log(`📞 Пользователь ${socket.id} звонит пользователю ${data.to}`);
-                socket.to(data.to).emit('incoming-call', {
-                    from: socket.id,
-                    signal: data.signal,
-                    withVideo: data.withVideo
-                });
+            socket.on('call_user', async (data) => {
+                try {
+                    console.log(`📞 Call initiated from ${socket.userId} to ${data.toUserId}`);
+                    const success = await this.emitToUser(data.toUserId, 'incoming_call', {
+                        fromUserId: socket.userId,
+                        signal: data.signal,
+                        withVideo: data.withVideo
+                    });
+                    if (!success) {
+                        socket.emit('call_failed', { reason: 'User offline or not found' });
+                    }
+                } catch (error) {
+                    console.error('Error in call_user:', error);
+                }
             });
 
-            socket.on('webrtc-signal', (data) => {
-                socket.to(data.to).emit('webrtc-signal', {
-                    from: socket.id,
-                    signal: data.signal
-                });
+            socket.on('answer_call', async (data) => {
+                try {
+                    console.log(`📞 Call answered by ${socket.userId} to ${data.toUserId}`);
+                    await this.emitToUser(data.toUserId, 'call_accepted', {
+                        fromUserId: socket.userId,
+                        signal: data.signal
+                    });
+                } catch (error) {
+                    console.error('Error in answer_call:', error);
+                }
             });
 
-            socket.on('call-rejected', (data) => {
-                console.log(`❌ Пользователь ${socket.id} отклонил звонок от ${data.to}`);
-                socket.to(data.to).emit('call-rejected', {
-                    from: socket.id
-                });
+            socket.on('ice_candidate', async (data) => {
+                try {
+                    await this.emitToUser(data.toUserId, 'ice_candidate', {
+                        fromUserId: socket.userId,
+                        candidate: data.candidate
+                    });
+                } catch (error) {
+                    console.error('Error in ice_candidate:', error);
+                }
             });
 
-            socket.on('end-call', (data) => {
-                console.log(`📞 Пользователь ${socket.id} завершил звонок`);
-                socket.to(data.to).emit('call-ended', {
-                    from: socket.id
-                });
+            socket.on('reject_call', async (data) => {
+                try {
+                    console.log(`❌ Call rejected by ${socket.userId} from ${data.toUserId}`);
+                    await this.emitToUser(data.toUserId, 'call_rejected', {
+                        fromUserId: socket.userId
+                    });
+                } catch (error) {
+                    console.error('Error in reject_call:', error);
+                }
+            });
+
+            socket.on('end_call', async (data) => {
+                try {
+                    console.log(`📞 Call ended by ${socket.userId}`);
+                    await this.emitToUser(data.toUserId, 'call_ended', {
+                        fromUserId: socket.userId
+                    });
+                } catch (error) {
+                    console.error('Error in end_call:', error);
+                }
             });
 
         });
     }
+
     // Отправить сообщение конкретному пользователю
     async emitToUser(userId, event, data) {
         try {

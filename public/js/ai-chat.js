@@ -574,3 +574,6 @@ async function loadProvidersData() {
 
 // Делаем функцию глобальной
 window.loadProviders = loadProviders;
+// Expose functions for enhancements
+window.sendAudioMessage = sendAudioMessage;
+window.appendMessage = appendMessage;
