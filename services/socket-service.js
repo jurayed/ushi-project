@@ -226,7 +226,7 @@ class SocketService {
     // Отправить сообщение конкретному пользователю
     async emitToUser(userId, event, data) {
         try {
-            const socketId = await this.redis.getUserSocketId(userId);
+            const socketId = await this.redis.getUserSocket(userId);
             if (socketId) {
                 this.io.to(socketId).emit(event, data);
                 return true;

@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { authenticateToken } = require('../middleware/auth');
+const { transcribeAudio } = require('../services/transcription-service');
 
 // Настройка хранилища для multer
 const storage = multer.diskStorage({
@@ -50,6 +51,37 @@ router.post('/audio', authenticateToken, upload.single('audio'), (req, res) => {
     } catch (error) {
         console.error('Ошибка при загрузке файла:', error);
         res.status(500).json({ error: 'Ошибка сервера при загрузке файла' });
+    }
+});
+
+// Transcription endpoint
+router.post('/transcribe', authenticateToken, upload.single('audio'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Файл не загружен' });
+        }
+
+        console.log('🎙️ Starting audio transcription...');
+
+        // Read the file buffer
+        const audioBuffer = fs.readFileSync(req.file.path);
+
+        // Transcribe using OpenAI Whisper
+        const transcription = await transcribeAudio(audioBuffer, req.file.filename);
+
+        // Return both file URL and transcribed text
+        const fileUrl = `/uploads/voice/${req.file.filename}`;
+
+        res.json({
+            success: true,
+            url: fileUrl,
+            text: transcription.text,
+            language: transcription.language,
+            filename: req.file.filename
+        });
+    } catch (error) {
+        console.error('❌ Transcription error:', error);
+        res.status(500).json({ error: 'Ошибка транскрибации: ' + error.message });
     }
 });
 

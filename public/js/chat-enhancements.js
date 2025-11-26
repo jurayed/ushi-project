@@ -96,10 +96,13 @@ function setupHoldToRecord() {
                 // Only send if we have chunks and it wasn't cancelled
                 if (localAudioChunks.length > 0) {
                     const audioBlob = new Blob(localAudioChunks, { type: 'audio/webm' });
-                    if (window.sendAudioMessage) {
+                    // Use transcription function if available, otherwise fallback
+                    if (window.sendAudioMessageWithTranscription) {
+                        await window.sendAudioMessageWithTranscription(audioBlob);
+                    } else if (window.sendAudioMessage) {
                         await window.sendAudioMessage(audioBlob);
                     } else {
-                        console.error('sendAudioMessage not available');
+                        console.error('No audio send function available');
                     }
                 }
             };

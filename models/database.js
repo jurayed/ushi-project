@@ -101,3 +101,14 @@ module.exports = {
   pool,
   initializeDatabase
 };
+// Run database column migration for transcribed_text on startup
+(async () => {
+  try {
+    await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT');
+    await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(50)');
+    await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS transcribed_text TEXT');
+    console.log('? Database columns migrated');
+  } catch (err) {
+    console.log('Note: Column migration check:', err.message);
+  }
+})();

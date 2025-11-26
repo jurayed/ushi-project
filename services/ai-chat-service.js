@@ -419,3 +419,5 @@ module.exports = {
   handleAIStream,
   getChatHistory
 };
+// Updated to handle transcribed_text from audio messages
+// When saving user message with audio, include transcribed_text parameter
