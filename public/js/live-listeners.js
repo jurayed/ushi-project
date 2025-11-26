@@ -34,37 +34,6 @@ window.toggleEarRegistration = function () {
         }
     } catch (error) {
         console.error('❌ Toggle error:', error);
-        showError('Ошибка: ' + error.message);
-    }
-};
-
-// --- Авто-обновление списка слушателей ---
-
-window.startListenersAutoRefresh = function () {
-    // Загружаем сразу
-    window.loadAvailableListeners();
-    window.loadEarsInfo();
-
-    // Очищаем предыдущий интервал если был
-    if (listenersRefreshInterval) clearInterval(listenersRefreshInterval);
-
-    // Устанавливаем новый интервал (5 секунд)
-    listenersRefreshInterval = setInterval(() => {
-        // Обновляем только если мы не в активной беседе (чтобы не отвлекать)
-        // Или можно обновлять всегда, но тихо
-        if (!window.currentConversationId) {
-            window.loadAvailableListeners();
-            window.loadEarsInfo();
-        }
-    }, 5000);
-
-    console.log('✅ Listeners auto-refresh started');
-};
-
-window.stopListenersAutoRefresh = function () {
-    if (listenersRefreshInterval) {
-        clearInterval(listenersRefreshInterval);
-        listenersRefreshInterval = null;
         console.log('🛑 Listeners auto-refresh stopped');
     }
 };

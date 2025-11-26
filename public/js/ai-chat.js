@@ -577,3 +577,5 @@ window.loadProviders = loadProviders;
 // Expose functions for enhancements
 window.sendAudioMessage = sendAudioMessage;
 window.appendMessage = appendMessage;
+window.testAIChatStream = testAIChatStream;
+window.testAIChatRegular = testAIChatRegular;

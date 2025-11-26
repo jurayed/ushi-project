@@ -84,7 +84,12 @@ window.sendAudioMessageWithTranscription = async function (audioBlob) {
 
         // Then send to AI
         if (useStreaming && window.testAIChatStream) {
-            await window.testAIChatStream(payload);
+            await window.testAIChatStream(
+                payload.psychotype,
+                payload.provider,
+                payload.model,
+                payload.message
+            );
         } else {
             const chatResponse = await fetch('/api/chat/ai', {
                 method: 'POST',
