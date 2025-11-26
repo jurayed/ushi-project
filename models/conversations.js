@@ -192,6 +192,20 @@ async function getUserActiveConversations(userId) {
   }
 }
 
+// Получить сессию по ID
+async function getConversationById(conversationId) {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM conversations WHERE id = $1',
+      [conversationId]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Ошибка получения сессии:', error);
+    return null;
+  }
+}
+
 module.exports = {
   registerAsEar,
   unregisterAsEar,
@@ -201,5 +215,6 @@ module.exports = {
   addMessage,
   getConversationMessages,
   closeConversation,
-  getUserActiveConversations
+  getUserActiveConversations,
+  getConversationById
 };

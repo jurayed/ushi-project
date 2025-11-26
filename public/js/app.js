@@ -9,9 +9,9 @@ window.isEar = false;
 window.currentConversationId = null;
 
 // Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     console.log('✅ DOM загружен, приложение инициализировано');
-    
+
     // Проверяем сохраненный токен при загрузке
     const savedToken = localStorage.getItem('ushi_token');
     if (savedToken) {
@@ -32,6 +32,12 @@ async function checkAuth() {
         if (response.ok) {
             window.currentUser = await response.json();
             window.showMainInterface();
+            // Initialize socket after successful auth - wait for module to load
+            setTimeout(() => {
+                if (window.initSocketConnection) {
+                    window.initSocketConnection();
+                }
+            }, 500);
         } else {
             localStorage.removeItem('ushi_token');
             window.currentToken = null;

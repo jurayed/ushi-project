@@ -1,26 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
-const { 
-  registerAsEar, 
-  unregisterAsEar, 
+const {
+  registerAsEar,
+  unregisterAsEar,
   getAvailableEarsCount,
   addMessage,
   getConversationMessages,
   closeConversation,
-  getUserActiveConversations
+  getUserActiveConversations,
+  getConversationById
 } = require('../models/conversations');
+const { pool } = require('../models/database');
 const { matchUserWithEar } = require('../services/matching');
+const SocketService = require('../services/socket-service');
 
 // Зарегистрироваться как слушатель
 router.post('/ears/register', authenticateToken, async (req, res) => {
   try {
     const result = await registerAsEar(req.user.id);
-    
+
     if (result.error) {
       return res.status(400).json({ error: result.error });
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Ошибка регистрации слушателя:', error);
@@ -32,11 +35,11 @@ router.post('/ears/register', authenticateToken, async (req, res) => {
 router.post('/ears/unregister', authenticateToken, async (req, res) => {
   try {
     const result = await unregisterAsEar(req.user.id);
-    
+
     if (result.error) {
       return res.status(400).json({ error: result.error });
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Ошибка удаления слушателя:', error);
@@ -55,22 +58,85 @@ router.get('/ears/available', authenticateToken, async (req, res) => {
   }
 });
 
-// Найти слушателя и начать сессию
-router.post('/conversations/find', authenticateToken, async (req, res) => {
+// Получить список доступных слушателей
+router.get('/ears/list', authenticateToken, async (req, res) => {
   try {
-    const result = await matchUserWithEar(req.user.id);
-    
-    if (!result.success) {
-      return res.status(404).json({ error: result.error });
-    }
-    
+    const listeners = await pool.query(`
+      SELECT u.id, u.username, e.updated_at as registered_at, e.id as ear_id
+      FROM ears e
+      JOIN users u ON e.user_id = u.id
+      WHERE e.user_id != $1
+      AND e.is_available = true
+      ORDER BY e.updated_at DESC
+    `, [req.user.id]);
+
     res.json({
-      message: 'Сессия с слушателем начата',
-      conversation_id: result.conversation.id,
-      ear: result.conversation.ear
+      listeners: listeners.rows.map(l => ({
+        id: l.ear_id,
+        userId: l.id,
+        username: l.username,
+        psychotype: 'empath', // Заглушка
+        online: true
+      }))
     });
   } catch (error) {
-    console.error('Ошибка поиска слушателя:', error);
+    console.error('Ошибка получения списка слушателей:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
+
+// Создать сессию с выбранным слушателем
+router.post('/conversations/create', authenticateToken, async (req, res) => {
+  try {
+    const { listenerId } = req.body;
+
+    if (!listenerId) {
+      return res.status(400).json({ error: 'Требуется ID слушателя' });
+    }
+
+    // Проверка что не пытается создать сессию с собой
+    // listenerId - это ear_id, нужно получить user_id из таблицы ears
+    const earCheck = await pool.query('SELECT user_id FROM ears WHERE id = $1', [listenerId]);
+
+    if (earCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Слушатель не найден' });
+    }
+
+    if (earCheck.rows[0].user_id === req.user.id) {
+      return res.status(400).json({ error: 'Нельзя создать сессию с самим собой' });
+    }
+
+    // Создаем сессию (используем created_at вместо started_at)
+    const result = await pool.query(`
+      INSERT INTO conversations (user_id, ear_id, status)
+      VALUES ($1, $2, 'active')
+      RETURNING id, user_id, ear_id, created_at
+    `, [req.user.id, listenerId]);
+
+    const conversation = result.rows[0];
+
+    // Получаем информацию о пользователе для отправки слушателю
+    const userInfo = await pool.query(
+      'SELECT id, username FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    // Отправить уведомление слушателю через Socket
+    // Нам нужно отправить уведомление пользователю, который является слушателем
+    SocketService.notifyNewConversation(earCheck.rows[0].user_id, {
+      conversation_id: conversation.id,
+      requester: {
+        id: userInfo.rows[0].id,
+        username: userInfo.rows[0].username
+      }
+    });
+
+    res.json({
+      message: 'Сессия создана',
+      conversation_id: conversation.id
+    });
+  } catch (error) {
+    console.error('Ошибка создания сессии:', error);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
@@ -80,17 +146,40 @@ router.post('/conversations/:id/message', authenticateToken, async (req, res) =>
   try {
     const { id } = req.params;
     const { message } = req.body;
-    
+
     if (!message) {
       return res.status(400).json({ error: 'Сообщение обязательно' });
     }
-    
+
     const result = await addMessage(id, req.user.id, message);
-    
+
     if (!result) {
       return res.status(400).json({ error: 'Ошибка отправки сообщения' });
     }
-    
+
+    // Отправляем уведомление через сокет
+    const conversation = await getConversationById(id);
+    if (conversation) {
+      // Определяем получателя: если отправитель - пользователь, то получатель - слушатель (его user_id), и наоборот
+      // Но conversation.ear_id - это ID из таблицы ears. Нам нужно получить user_id слушателя.
+
+      let recipientId;
+      if (conversation.user_id === req.user.id) {
+        // Отправил пользователь, получатель - слушатель
+        const ear = await pool.query('SELECT user_id FROM ears WHERE id = $1', [conversation.ear_id]);
+        if (ear.rows.length > 0) {
+          recipientId = ear.rows[0].user_id;
+        }
+      } else {
+        // Отправил слушатель, получатель - пользователь
+        recipientId = conversation.user_id;
+      }
+
+      if (recipientId) {
+        await SocketService.emitToUser(recipientId, 'new_message', result);
+      }
+    }
+
     res.json({ success: true, message: result });
   } catch (error) {
     console.error('Ошибка отправки сообщения:', error);
@@ -103,11 +192,11 @@ router.get('/conversations/:id/messages', authenticateToken, async (req, res) =>
   try {
     const { id } = req.params;
     const result = await getConversationMessages(id, req.user.id);
-    
+
     if (result.error) {
       return res.status(404).json({ error: result.error });
     }
-    
+
     res.json(result.messages);
   } catch (error) {
     console.error('Ошибка получения сообщений:', error);
@@ -120,11 +209,11 @@ router.post('/conversations/:id/close', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await closeConversation(id, req.user.id);
-    
+
     if (result.error) {
       return res.status(404).json({ error: result.error });
     }
-    
+
     res.json({ message: result.message });
   } catch (error) {
     console.error('Ошибка закрытия сессии:', error);

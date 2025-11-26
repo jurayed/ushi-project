@@ -29,27 +29,27 @@ class SocketService {
                 try {
                     const { userId, userData } = data;
                     console.log('🟢 User online event:', { userId, userData });
-                    
+
                     // Проверяем существование пользователя в Postgres
                     const userResult = await pool.query(
                         'SELECT id, username, email FROM users WHERE id = $1',
                         [userId]
                     );
-                    
+
                     if (userResult.rows.length === 0) {
                         socket.emit('error', { message: 'Пользователь не найден в базе' });
                         return;
                     }
 
                     const user = userResult.rows[0];
-                    
+
                     await this.redis.setUserOnline(userId, socket.id, {
                         username: user.username,
                         email: user.email,
                         ...userData
                     });
                     socket.userId = userId;
-                    
+
                     console.log(`👤 User ${userId} is online`);
                     this.io.emit('user_status_changed', { userId, status: 'online' });
                 } catch (error) {
@@ -58,13 +58,13 @@ class SocketService {
                 }
             });
 
-            // Listener registration - ИСПРАВЛЕННАЯ ВЕРСИЯ
+            // Listener registration
             socket.on('register_listener', async (data) => {
                 try {
                     console.log('🎧 Register listener event received:', data);
-                    
+
                     const { userId, userData } = data;
-                    
+
                     // ВАЖНО: Проверяем, что userId передан
                     if (!userId) {
                         console.error('❌ userId не передан в register_listener');
@@ -77,7 +77,7 @@ class SocketService {
                         'SELECT id, username, email FROM users WHERE id = $1',
                         [userId]
                     );
-                    
+
                     if (userResult.rows.length === 0) {
                         console.error('❌ Пользователь не найден в базе:', userId);
                         socket.emit('error', { message: 'Пользователь не найден' });
@@ -107,56 +107,108 @@ class SocketService {
                         registeredAt: new Date().toISOString()
                     });
 
-                    socket.emit('listener_registered', { 
-                        success: true, 
+                    socket.emit('listener_registered', {
+                        success: true,
                         listenerId: earResult.rows[0].id,
                         rating: 5.0
                     });
-                    
+
                     // Уведомляем всех о обновлении списка слушателей
                     const availableListeners = await this.redis.getAvailableListeners();
                     this.io.emit('listeners_updated', availableListeners);
-                    
+
                     console.log(`🎧 User ${userId} (${user.username}) зарегистрирован как слушатель`);
                 } catch (error) {
                     console.error('❌ Ошибка register_listener:', error);
                     socket.emit('error', { message: `Ошибка регистрации слушателя: ${error.message}` });
                 }
-				
-            }); 
-					
-			// WebRTC handlers - ДОБАВЬТЕ ЭТОТ БЛОК КОДА
-			socket.on('start-call', (data) => {
-				console.log(`📞 Пользователь ${socket.id} звонит пользователю ${data.to}`);
-				socket.to(data.to).emit('incoming-call', {
-					from: socket.id,
-					signal: data.signal,
-					withVideo: data.withVideo
-				});
-			});
 
-			socket.on('webrtc-signal', (data) => {
-				socket.to(data.to).emit('webrtc-signal', {
-					from: socket.id,
-					signal: data.signal
-				});
-			});
+            });
 
-			socket.on('call-rejected', (data) => {
-				console.log(`❌ Пользователь ${socket.id} отклонил звонок от ${data.to}`);
-				socket.to(data.to).emit('call-rejected', {
-					from: socket.id
-				});
-			});
+            // Listener unregistration
+            socket.on('unregister_listener', async (data) => {
+                try {
+                    console.log('➖ Unregister listener event received:', data);
+                    const { userId } = data;
 
-			socket.on('end-call', (data) => {
-				console.log(`📞 Пользователь ${socket.id} завершил звонок`);
-				socket.to(data.to).emit('call-ended', {
-					from: socket.id
-				});
-			});		
-								
+                    if (!userId) {
+                        socket.emit('error', { message: 'ID пользователя не указан' });
+                        return;
+                    }
+
+                    // Обновляем статус в Postgres
+                    await pool.query(
+                        'UPDATE ears SET is_available = false WHERE user_id = $1',
+                        [userId]
+                    );
+
+                    // Удаляем из Redis
+                    await this.redis.removeActiveListener(userId);
+
+                    socket.emit('listener_unregistered', { success: true });
+
+                    // Уведомляем всех
+                    const availableListeners = await this.redis.getAvailableListeners();
+                    this.io.emit('listeners_updated', availableListeners);
+
+                    console.log(`🎧 User ${userId} перестал быть слушателем`);
+                } catch (error) {
+                    console.error('❌ Ошибка unregister_listener:', error);
+                    socket.emit('error', { message: 'Ошибка отмены регистрации слушателя' });
+                }
+            });
+
+            // WebRTC handlers
+            socket.on('start-call', (data) => {
+                console.log(`📞 Пользователь ${socket.id} звонит пользователю ${data.to}`);
+                socket.to(data.to).emit('incoming-call', {
+                    from: socket.id,
+                    signal: data.signal,
+                    withVideo: data.withVideo
+                });
+            });
+
+            socket.on('webrtc-signal', (data) => {
+                socket.to(data.to).emit('webrtc-signal', {
+                    from: socket.id,
+                    signal: data.signal
+                });
+            });
+
+            socket.on('call-rejected', (data) => {
+                console.log(`❌ Пользователь ${socket.id} отклонил звонок от ${data.to}`);
+                socket.to(data.to).emit('call-rejected', {
+                    from: socket.id
+                });
+            });
+
+            socket.on('end-call', (data) => {
+                console.log(`📞 Пользователь ${socket.id} завершил звонок`);
+                socket.to(data.to).emit('call-ended', {
+                    from: socket.id
+                });
+            });
+
         });
+    }
+    // Отправить сообщение конкретному пользователю
+    async emitToUser(userId, event, data) {
+        try {
+            const socketId = await this.redis.getUserSocketId(userId);
+            if (socketId) {
+                this.io.to(socketId).emit(event, data);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('❌ Error emitting to user:', error);
+            return false;
+        }
+    }
+
+    // Уведомить слушателя о новой сессии
+    async notifyNewConversation(listenerId, data) {
+        return this.emitToUser(listenerId, 'new_conversation_request', data);
     }
 }
 

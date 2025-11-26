@@ -9,13 +9,13 @@ export async function initializeSocket() {
     }
 
     console.log('🔌 Инициализация Socket.IO...');
-    
+
     try {
         window.socket = io();
 
         window.socket.on('connect', () => {
             console.log('✅ Socket.IO подключен');
-            
+
             window.socket.emit('user_online', {
                 userId: window.currentUser.id,
                 userData: {
@@ -26,7 +26,7 @@ export async function initializeSocket() {
 
             // Загружаем информацию о слушателях после подключения
             loadEarsInfo();
-			setupWebRTCListeners(); 
+            setupWebRTCListeners();
         });
 
         window.socket.on('disconnect', () => {
@@ -38,10 +38,13 @@ export async function initializeSocket() {
         });
 
         setupSocketListeners();
-        
+
         console.log('✅ Socket.IO инициализирован');
-        
+
     } catch (error) {
         console.error('❌ Ошибка инициализации Socket.IO:', error);
     }
 }
+
+// Expose globally for non-module scripts like app.js
+window.initSocketConnection = initializeSocket;

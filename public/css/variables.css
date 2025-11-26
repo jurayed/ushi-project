@@ -1,0 +1,59 @@
+:root {
+    /* Colors - Premium Dark Theme */
+    --bg-dark: #0f0f1a;
+    --bg-panel: rgba(22, 33, 62, 0.7);
+    --bg-panel-light: rgba(255, 255, 255, 0.05);
+    
+    --primary: #4facfe;
+    --primary-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --secondary: #e94560;
+    --accent: #00f2fe;
+    
+    --text-main: #ffffff;
+    --text-muted: #a0a0b0;
+    
+    --success: #00b894;
+    --error: #ff7675;
+    --warning: #fdcb6e;
+    
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    
+    /* Borders & Radius */
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+    --radius-full: 9999px;
+    
+    --border-light: rgba(255, 255, 255, 0.1);
+    
+    /* Shadows */
+    --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 8px 15px rgba(0, 0, 0, 0.2);
+    --shadow-glow: 0 0 20px rgba(79, 172, 254, 0.3);
+    
+    /* Typography */
+    --font-main: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-panel-light);
+    border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
+}

@@ -3,7 +3,7 @@ import { showTab, showMainInterface, showAuthInterface, showError, showSuccess }
 import { validateAuthFields, validateRegFields } from './utils.js';
 
 // Глобальные функции аутентификации
-window.login = async function() {
+window.login = async function () {
     console.log('login вызван');
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -25,6 +25,13 @@ window.login = async function() {
             localStorage.setItem('ushi_token', data.token);
             showMainInterface();
             showSuccess('Вход выполнен успешно!');
+
+            // Initialize socket after login - call global function
+            setTimeout(() => {
+                if (window.initSocketConnection) {
+                    window.initSocketConnection();
+                }
+            }, 500);
         } else {
             showError('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
         }
@@ -33,7 +40,7 @@ window.login = async function() {
     }
 };
 
-window.register = async function() {
+window.register = async function () {
     console.log('register вызван');
     const username = document.getElementById('regUsername').value.trim();
     const email = document.getElementById('regEmail').value.trim();
@@ -53,7 +60,7 @@ window.register = async function() {
         if (response.ok) {
             showSuccess('Регистрация успешна! Теперь войдите в систему.');
             showTab('login');
-            
+
             // Очищаем поля регистрации
             document.getElementById('regUsername').value = '';
             document.getElementById('regEmail').value = '';
@@ -66,24 +73,24 @@ window.register = async function() {
     }
 };
 
-window.logout = function() {
+window.logout = function () {
     console.log('logout вызван');
-    
+
     window.currentUser = null;
     window.currentToken = null;
     window.isEar = false;
     window.currentConversationId = null;
-    
+
     localStorage.removeItem('ushi_token');
-    
+
     // Отключаем Socket.IO если подключен
     if (window.socket) {
         window.socket.disconnect();
         window.socket = null;
     }
-    
+
     showAuthInterface();
-    
+
     console.log('✅ Выход выполнен');
 };
 
