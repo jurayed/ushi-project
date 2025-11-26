@@ -145,13 +145,13 @@ router.post('/conversations/create', authenticateToken, async (req, res) => {
 router.post('/conversations/:id/message', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { message } = req.body;
+    const { message, media_url, media_type } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ error: 'Сообщение обязательно' });
+    if (!message && !media_url) {
+      return res.status(400).json({ error: 'Сообщение или медиа обязательно' });
     }
 
-    const result = await addMessage(id, req.user.id, message);
+    const result = await addMessage(id, req.user.id, message || '[Голосовое сообщение]', media_url, media_type);
 
     if (!result) {
       return res.status(400).json({ error: 'Ошибка отправки сообщения' });

@@ -108,76 +108,67 @@
                     <button class="btn-secondary" onclick="loadProviders()">🔄 Обновить провайдеры</button>
                     <button class="btn-primary" onclick="startAudioCall()">📞 Аудиозвонок</button>
                     <button class="btn-primary" onclick="startVideoCall()">🎥 Видеозвонок</button>
-                    <button class="btn-secondary" onclick="startAudioMessage()">🎤 Аудиосообщение</button>
+                    <div class="voice-controls" style="display: inline-block;">
+                        <button id="recordButton" class="btn-secondary" onclick="startAudioMessage()">🎤
+                            Аудиосообщение</button>
+                        <button id="stopRecordButton" class="btn-danger" onclick="stopAudioMessage()"
+                            style="display: none;">⏹️ Стоп</button>
+                        <button id="cancelRecordButton" class="btn-secondary" onclick="cancelAudioMessage()"
+                            style="display: none;">❌ Отмена</button>
+                    </div>
                 </div>
 
                 <div id="typingIndicator" class="typing">
                     ⏳ ИИ печатает ответ... Пожалуйста, подождите.
+                    <div id="earsInfo" style="font-size: 14px; color: var(--success);"></div>
                 </div>
 
-                <div id="streamIndicator" class="stream-indicator">
-                    🔄 Потоковая передача активна...
-                </div>
-
-                <div class="result-area">
-                    <h3>📊 Результаты</h3>
-                    <div id="chatResult"></div>
-                </div>
-
-                <div id="liveEarsSection" class="view-section"
-                    style="margin-top: 30px; border-top: 1px solid #333; padding-top: 20px;">
-                    <div class="content-header">
-                        <h3><i class="fas fa-headphones"></i> Живые слушатели</h3>
-                        <div id="earsInfo" style="font-size: 14px; color: var(--success);"></div>
+                <div class="content-body">
+                    <!-- Кнопки управления -->
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <button class="btn btn-primary" style="padding: 15px 30px;" onclick="loadAvailableListeners()">
+                            <i class="fas fa-search"></i> Показать доступных слушателей
+                        </button>
+                        <button class="btn btn-secondary" id="earToggleButton" onclick="toggleEarRegistration()"
+                            style="margin-left: 10px;">
+                            <i class="fas fa-ear-listen"></i> Стать слушателем
+                        </button>
                     </div>
 
-                    <div class="content-body">
-                        <!-- Кнопки управления -->
-                        <div style="text-align: center; margin-bottom: 30px;">
-                            <button class="btn btn-primary" style="padding: 15px 30px;"
-                                onclick="loadAvailableListeners()">
-                                <i class="fas fa-search"></i> Показать доступных слушателей
-                            </button>
-                            <button class="btn btn-secondary" id="earToggleButton" onclick="toggleEarRegistration()"
-                                style="margin-left: 10px;">
-                                <i class="fas fa-ear-listen"></i> Стать слушателем
-                            </button>
+                    <!-- Список доступных слушателей -->
+                    <div id="listenersListContainer"
+                        style="margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                        <!-- Список будет загружен динамически -->
+                    </div>
+
+                    <!-- Активная сессия -->
+                    <div id="conversationSection" class="hidden"
+                        style="height: 100%; display: flex; flex-direction: column;">
+
+                        <div class="glass-panel" style="padding: 15px; margin-bottom: 15px; text-align: center;">
+                            <strong>💬 Разговор с:</strong> <span id="conversationPartner"
+                                style="color: var(--accent);">...</span>
                         </div>
 
-                        <!-- Список доступных слушателей -->
-                        <div id="listenersListContainer"
-                            style="margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto;">
-                            <!-- Список будет загружен динамически -->
+                        <div id="conversationMessages" class="chat-messages"
+                            style="flex: 1; min-height: 300px; max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
                         </div>
 
-                        <!-- Активная сессия -->
-                        <div id="conversationSection" class="hidden"
-                            style="height: 100%; display: flex; flex-direction: column;">
-
-                            <div class="glass-panel" style="padding: 15px; margin-bottom: 15px; text-align: center;">
-                                <strong>💬 Разговор с:</strong> <span id="conversationPartner"
-                                    style="color: var(--accent);">...</span>
-                            </div>
-
-                            <div id="conversationMessages" class="chat-messages"
-                                style="flex: 1; min-height: 300px; max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
-                            </div>
-
-                            <div class="chat-controls" style="display: flex; gap: 10px;">
-                                <input type="text" id="conversationMessageInput" class="form-input"
-                                    placeholder="Сообщение..." style="flex: 1;">
-                                <button class="btn btn-icon btn-primary" onclick="sendConversationMessage()">
-                                    <i class="fas fa-paper-plane"></i>
-                                </button>
-                                <button class="btn btn-secondary" onclick="closeConversation()">
-                                    Завершить
-                                </button>
-                            </div>
+                        <div class="chat-controls" style="display: flex; gap: 10px;">
+                            <input type="text" id="conversationMessageInput" class="form-input"
+                                placeholder="Сообщение..." style="flex: 1;">
+                            <button class="btn btn-icon btn-primary" onclick="sendConversationMessage()">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                            <button class="btn btn-secondary" onclick="closeConversation()">
+                                Завершить
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- Подключаем JavaScript -->

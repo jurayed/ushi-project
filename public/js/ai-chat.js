@@ -1,11 +1,14 @@
-// public/js/ai-chat.js
 import { showError, showSuccess, showInfo } from './ui.js';
 
 let availableProviders = [];
 let availableModels = {};
 
+// ====================VOICE MESSAGE GLOBALS ====================
+let mediaRecorder = null;
+let audioChunks = [];
+
 // Глобальные функции AI чата
-window.testAIChat = async function() {
+window.testAIChat = async function () {
     if (!window.currentToken) {
         showError('Сначала войдите в систему');
         return;
@@ -30,6 +33,9 @@ window.testAIChat = async function() {
     // Очищаем поле ввода после отправки
     document.getElementById('messageInput').value = '';
 
+    // Отображаем сообщение пользователя сразу
+    appendMessage('user', message);
+
     if (useStreaming) {
         await testAIChatStream(psychotype, provider, model, message);
     } else {
@@ -37,28 +43,28 @@ window.testAIChat = async function() {
     }
 };
 
-window.loadProviders = async function() {
+window.loadProviders = async function () {
     try {
         console.log('🔄 Загрузка провайдеров...');
-        
+
         showInfo('Загрузка списка провайдеров...');
-        
+
         const response = await fetch('/api/providers');
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ошибка! статус: ${response.status}`);
         }
-        
+
         availableProviders = await response.json();
-        
+
         const providerSelect = document.getElementById('provider');
         if (!providerSelect) {
             console.warn('Элемент provider не найден');
             return;
         }
-        
+
         providerSelect.innerHTML = '<option value="">Выберите провайдера</option>';
-        
+
         let enabledCount = 0;
         availableProviders.forEach(provider => {
             const option = document.createElement('option');
@@ -66,43 +72,43 @@ window.loadProviders = async function() {
             option.textContent = `${provider.name} ${provider.enabled ? '✅' : '❌'}`;
             option.disabled = !provider.enabled;
             providerSelect.appendChild(option);
-            
+
             if (provider.enabled) {
                 availableModels[provider.id] = provider.models;
                 enabledCount++;
             }
         });
-        
+
         // Автоматически выбираем первый доступный провайдер
         const firstEnabledProvider = availableProviders.find(p => p.enabled);
         if (firstEnabledProvider) {
             providerSelect.value = firstEnabledProvider.id;
             loadModels();
         }
-        
+
         console.log('✅ Провайдеры загружены:', availableProviders);
         showSuccess(`Загружено ${availableProviders.length} провайдеров (${enabledCount} доступно)`);
-        
+
     } catch (error) {
         console.error('❌ Ошибка загрузки провайдеров:', error);
         showError('Не удалось загрузить список провайдеров: ' + error.message);
-        
+
         // Показываем fallback провайдеры при ошибке
         showFallbackProviders();
     }
 };
 
-window.loadModels = function() {
+window.loadModels = function () {
     const provider = document.getElementById('provider')?.value;
     const modelSelect = document.getElementById('model');
-    
+
     if (!modelSelect || !provider) {
         console.warn('Элемент model или provider не найден');
         return;
     }
-    
+
     modelSelect.innerHTML = '<option value="">Выберите модель</option>';
-    
+
     if (availableModels[provider]) {
         Object.entries(availableModels[provider]).forEach(([modelKey, modelInfo]) => {
             const option = document.createElement('option');
@@ -110,13 +116,13 @@ window.loadModels = function() {
             option.textContent = `${modelInfo.name} (${modelInfo.context} tokens) - ${modelInfo.price || 'цена не указана'}`;
             modelSelect.appendChild(option);
         });
-        
+
         // Автоматически выбираем первую модель
         const firstModel = Object.keys(availableModels[provider])[0];
         if (firstModel) {
             modelSelect.value = firstModel;
         }
-        
+
         console.log(`✅ Модели загружены для ${provider}:`, Object.keys(availableModels[provider]));
     } else {
         console.warn('Модели не найдены для провайдера:', provider);
@@ -124,17 +130,227 @@ window.loadModels = function() {
     }
 };
 
+// Загрузка истории чата
+window.loadChatHistory = async function () {
+    try {
+        const response = await fetch('/api/chat/ai/history', {
+            headers: {
+                'Authorization': 'Bearer ' + window.currentToken
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки истории');
+        }
+
+        const messages = await response.json();
+        const container = document.getElementById('aiChatContainer');
+        if (container) {
+            container.innerHTML = ''; // Очищаем контейнер
+            messages.forEach(msg => {
+                appendMessage(
+                    msg.is_ai_response ? 'ai' : 'user',
+                    msg.message_text,
+                    msg.is_ai_response
+                        ? { psychotype: msg.ai_psychotype, media_url: msg.media_url, media_type: msg.media_type }
+                        : { media_url: msg.media_url, media_type: msg.media_type }
+                );
+            });
+            // Прокрутка вниз
+            container.scrollTop = container.scrollHeight;
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки истории:', error);
+    }
+};
+
+// Вспомогательная функция для добавления сообщения
+function appendMessage(role, text, metadata = null) {
+    const container = document.getElementById('aiChatContainer');
+    if (!container) return null;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role === 'user' ? 'sent' : 'received'}`;
+
+    let content = '';
+
+    // Если есть медиа (аудио)
+    if (metadata && metadata.media_url && metadata.media_type === 'audio/webm') {
+        content += `
+            <div class="audio-message">
+                <audio controls src="${metadata.media_url}"></audio>
+            </div>
+        `;
+    }
+
+    if (text) {
+        content += `<div class="message-content">${text}</div>`;
+    }
+
+    if (role === 'ai' && metadata) {
+        content += `
+            <div class="message-meta" style="font-size: 0.8em; color: #888; margin-top: 5px;">
+                ${metadata.psychotype || 'AI'} ${metadata.provider ? `(${metadata.provider})` : ''}
+            </div>
+        `;
+    }
+
+    messageDiv.innerHTML = content;
+    container.appendChild(messageDiv);
+    container.scrollTop = container.scrollHeight;
+
+    return messageDiv; // Возвращаем элемент для обновления
+}
+
+// ==================== VOICE MESSAGE FUNCTIONS ====================
+window.startAudioMessage = async function () {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            await sendAudioMessage(audioBlob);
+        };
+
+        mediaRecorder.start();
+
+        // UI updates
+        const recordBtn = document.getElementById('recordButton');
+        const stopBtn = document.getElementById('stopRecordButton');
+        const cancelBtn = document.getElementById('cancelRecordButton');
+
+        if (recordBtn) recordBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'inline-block';
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
+
+        showInfo('Запись пошла...');
+    } catch (error) {
+        console.error('Ошибка доступа к микрофону:', error);
+        showError('Не удалось получить доступ к микрофону');
+    }
+};
+
+window.stopAudioMessage = function () {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        // UI updates
+        const recordBtn = document.getElementById('recordButton');
+        const stopBtn = document.getElementById('stopRecordButton');
+        const cancelBtn = document.getElementById('cancelRecordButton');
+
+        if (recordBtn) recordBtn.style.display = 'inline-block';
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (cancelBtn) cancelBtn.style.display = 'none';
+    }
+};
+
+window.cancelAudioMessage = function () {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        // Stop but don't process
+        mediaRecorder.onstop = null;
+        mediaRecorder.stop();
+        audioChunks = [];
+
+        // UI updates
+        const recordBtn = document.getElementById('recordButton');
+        const stopBtn = document.getElementById('stopRecordButton');
+        const cancelBtn = document.getElementById('cancelRecordButton');
+
+        if (recordBtn) recordBtn.style.display = 'inline-block';
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (cancelBtn) cancelBtn.style.display = 'none';
+
+        showInfo('Запись отменена');
+    }
+};
+
+async function sendAudioMessage(audioBlob) {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'voice-message.webm');
+
+    try {
+        showInfo('Отправка голосового сообщения...');
+
+        // 1. Upload audio
+        const uploadResponse = await fetch('/api/upload/audio', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + window.currentToken
+            },
+            body: formData
+        });
+
+        if (!uploadResponse.ok) {
+            throw new Error('Ошибка загрузки аудио');
+        }
+
+        const uploadResult = await uploadResponse.json();
+        const audioUrl = uploadResult.url;
+
+        // 2. Send message with audio URL to chat API
+        const psychotype = document.getElementById('psychotype')?.value;
+        const provider = document.getElementById('provider')?.value;
+        const model = document.getElementById('model')?.value;
+
+        // Отображаем сразу
+        appendMessage('user', '', { media_url: audioUrl, media_type: 'audio/webm' });
+
+        const chatResponse = await fetch('/api/chat/ai', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + window.currentToken
+            },
+            body: JSON.stringify({
+                message: '[Голосовое сообщение]',
+                psychotype: psychotype,
+                provider: provider,
+                model: model,
+                media_url: audioUrl,
+                media_type: 'audio/webm'
+            })
+        });
+
+        if (!chatResponse.ok) {
+            throw new Error('Ошибка отправки сообщения в чат');
+        }
+
+        const chatData = await chatResponse.json();
+
+        if (chatData.success) {
+            appendMessage('ai', chatData.response, {
+                psychotype: chatData.psychotype,
+                provider: chatData.provider,
+                model: chatData.model
+            });
+            showSuccess('Голосовое сообщение отправлено!');
+        } else {
+            showError('Ошибка AI: ' + chatData.error);
+        }
+
+    } catch (error) {
+        console.error('Ошибка отправки голосового:', error);
+        showError('Ошибка: ' + error.message);
+    }
+}
+
 // Fallback провайдеры при ошибке загрузки
 function showFallbackProviders() {
     const providerSelect = document.getElementById('provider');
     if (!providerSelect) return;
-    
+
     providerSelect.innerHTML = `
         <option value="deepseek">DeepSeek ✅</option>
         <option value="openai">OpenAI ✅</option>
         <option value="gemini">Google Gemini ✅</option>
     `;
-    
+
     const modelSelect = document.getElementById('model');
     if (modelSelect) {
         modelSelect.innerHTML = `
@@ -143,7 +359,7 @@ function showFallbackProviders() {
             <option value="gemini-2.0-flash">Gemini 2.0 Flash (1000000 tokens) - Бесплатно (быстрая)</option>
         `;
     }
-    
+
     console.log('🔄 Используются fallback провайдеры');
     showInfo('Используются резервные настройки провайдеров');
 }
@@ -151,21 +367,17 @@ function showFallbackProviders() {
 // Внутренние функции
 async function testAIChatRegular(psychotype, provider, model, message) {
     const typingIndicator = document.getElementById('typingIndicator');
-    const streamIndicator = document.getElementById('streamIndicator');
-    const chatResult = document.getElementById('chatResult');
-    
+
     if (typingIndicator) typingIndicator.style.display = 'block';
-    if (streamIndicator) streamIndicator.style.display = 'none';
-    if (chatResult) chatResult.innerHTML = '';
-    
+
     const clientStartTime = Date.now();
-    
+
     try {
         console.log('📤 Отправка запроса к AI...', { psychotype, provider, model, message });
-        
+
         const response = await fetch('/api/chat/ai', {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + window.currentToken
             },
@@ -176,35 +388,33 @@ async function testAIChatRegular(psychotype, provider, model, message) {
                 model: model
             })
         });
-        
+
         const clientEndTime = Date.now();
         const clientTime = clientEndTime - clientStartTime;
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.error || `HTTP ошибка! статус: ${response.status}`);
         }
-        
+
         const data = await response.json();
-        
+
         if (typingIndicator) typingIndicator.style.display = 'none';
-        
+
         if (data.success) {
-            displayRegularResult(data, clientTime);
+            appendMessage('ai', data.response, {
+                psychotype: data.psychotype,
+                provider: data.provider,
+                model: data.model
+            });
             showSuccess('Ответ получен!');
         } else {
-            if (chatResult) {
-                chatResult.innerHTML = `<div class="result error">❌ Ошибка: ${data.error}</div>`;
-            }
             showError('Ошибка AI: ' + data.error);
         }
-            
+
     } catch (error) {
         console.error('❌ Ошибка AI чата:', error);
         if (typingIndicator) typingIndicator.style.display = 'none';
-        if (chatResult) {
-            chatResult.innerHTML = `<div class="result error">❌ Ошибка: ${error.message}</div>`;
-        }
         showError('Ошибка соединения: ' + error.message);
     }
 }
@@ -212,24 +422,27 @@ async function testAIChatRegular(psychotype, provider, model, message) {
 async function testAIChatStream(psychotype, provider, model, message) {
     const typingIndicator = document.getElementById('typingIndicator');
     const streamIndicator = document.getElementById('streamIndicator');
-    const chatResult = document.getElementById('chatResult');
-    
+
     if (typingIndicator) typingIndicator.style.display = 'none';
     if (streamIndicator) streamIndicator.style.display = 'block';
-    if (chatResult) {
-        chatResult.innerHTML = 
-            '<div class="result streaming-active" id="streamResult"><strong>💭 Ответ:</strong> <span id="streamText"></span></div>';
+
+    // Создаем пустой элемент сообщения для стриминга
+    const messageDiv = appendMessage('ai', '...', { psychotype, provider });
+    if (!messageDiv) {
+        showError('Контейнер чата не найден');
+        if (streamIndicator) streamIndicator.style.display = 'none';
+        return;
     }
-    
+    const contentDiv = messageDiv.querySelector('.message-content');
+
     const streamStartTime = Date.now();
-    const streamText = document.getElementById('streamText');
-    
+
     try {
         console.log('📤 Отправка потокового запроса к AI...', { psychotype, provider, model, message });
-        
+
         const response = await fetch('/api/chat/ai/stream', {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + window.currentToken
             },
@@ -240,105 +453,48 @@ async function testAIChatStream(psychotype, provider, model, message) {
                 model: model
             })
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.error || `HTTP ошибка! статус: ${response.status}`);
         }
-        
+
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
-        
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
+
             const chunk = decoder.decode(value);
             fullResponse += chunk;
-            if (streamText) streamText.textContent = fullResponse;
-            
-            if (streamText) streamText.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            // Обновляем содержимое сообщения
+            if (contentDiv) contentDiv.textContent = fullResponse;
+
+            // Прокрутка
+            const container = document.getElementById('aiChatContainer');
+            if (container) container.scrollTop = container.scrollHeight;
         }
-        
-        const streamEndTime = Date.now();
-        const streamTime = streamEndTime - streamStartTime;
-        
-        const timingHTML = `
-            <div class="timing">
-                <strong>⏱️ Время потоковой передачи:</strong>
-                <div class="timing-grid">
-                    <div class="timing-item">
-                        <div class="timing-value">${streamTime}ms</div>
-                        <div>Общее время</div>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        const streamResult = document.getElementById('streamResult');
-        if (streamResult) streamResult.innerHTML += timingHTML;
-        
+
         showSuccess('Потоковый ответ завершен!');
-        
+
     } catch (error) {
         console.error('❌ Ошибка потоковой передачи:', error);
-        if (chatResult) {
-            chatResult.innerHTML = `<div class="result error">❌ Ошибка потоковой передачи: ${error.message}</div>`;
-        }
+        if (contentDiv) contentDiv.innerHTML += `<br><span style="color:red">❌ Ошибка: ${error.message}</span>`;
         showError('Ошибка потоковой передачи: ' + error.message);
     } finally {
         if (streamIndicator) streamIndicator.style.display = 'none';
     }
 }
 
-function displayRegularResult(data, clientTime) {
-    const chatResult = document.getElementById('chatResult');
-    if (!chatResult) return;
-    
-    let resultHTML = `
-        <div class="result success">
-            <div style="margin-bottom: 15px;">
-                <strong>💭 Ответ:</strong> ${data.response}
-            </div>
-            <div style="color: #666; font-size: 14px;">
-                <span class="psychotype-badge">${data.psychotype}</span>
-                <span class="provider-badge">${data.provider}</span>
-                <span class="model-badge">${data.model}</span>
-            </div>
-        </div>
-    `;
-    
-    if (data.timing) {
-        resultHTML += `
-            <div class="timing">
-                <strong>⏱️ Время ответа:</strong>
-                <div class="timing-grid">
-                    <div class="timing-item">
-                        <div class="timing-value">${data.timing.api_response_time || 'N/A'}ms</div>
-                        <div>API</div>
-                    </div>
-                    <div class="timing-item">
-                        <div class="timing-value">${data.timing.total_time || 'N/A'}ms</div>
-                        <div>Сервер</div>
-                    </div>
-                    <div class="timing-item">
-                        <div class="timing-value">${clientTime}ms</div>
-                        <div>Клиент</div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    
-    chatResult.innerHTML = resultHTML;
-}
-
 // Автоматически загружаем провайдеры при загрузке страницы
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
         if (window.currentToken) {
             window.loadProviders();
+            window.loadChatHistory(); // Загружаем историю
         }
     }, 1000);
 });
@@ -349,18 +505,18 @@ export async function loadProviders() {
         console.log('🔄 Загрузка провайдеров...');
         const response = await fetch('/api/providers');
         const providers = await response.json();
-        
+
         if (!response.ok) {
             throw new Error(providers.error || 'Ошибка загрузки провайдеров');
         }
 
         const providerSelect = document.getElementById('provider');
         const modelSelect = document.getElementById('model');
-        
+
         // Очищаем селекты
         providerSelect.innerHTML = '';
         modelSelect.innerHTML = '';
-        
+
         // Заполняем провайдеры
         providers.forEach(provider => {
             if (provider.enabled) {
@@ -370,17 +526,17 @@ export async function loadProviders() {
                 providerSelect.appendChild(option);
             }
         });
-        
+
         // Обновляем модели при выборе провайдера
         providerSelect.addEventListener('change', updateModels);
-        
+
         // Инициализируем модели для первого провайдера
         await updateModels();
-        
+
         console.log('✅ Провайдеры загружены:', providers);
         return providers;
     } catch (error) {
-        console.error('❌ Ошибка загрузки провайдеров:', error);
+        console.error('❌ Ошибка загрузки провай деров:', error);
         showError('Не удалось загрузить провайдеры: ' + error.message);
     }
 }
@@ -390,14 +546,14 @@ async function updateModels() {
         const providerSelect = document.getElementById('provider');
         const modelSelect = document.getElementById('model');
         const providers = await loadProvidersData();
-        
+
         const selectedProvider = providers.find(p => p.id === providerSelect.value);
-        
+
         if (!selectedProvider) return;
-        
+
         // Очищаем модели
         modelSelect.innerHTML = '';
-        
+
         // Заполняем модели для выбранного провайдера
         Object.entries(selectedProvider.models).forEach(([modelKey, modelInfo]) => {
             const option = document.createElement('option');
@@ -405,7 +561,7 @@ async function updateModels() {
             option.textContent = `${modelInfo.name} (${modelInfo.context} tokens)`;
             modelSelect.appendChild(option);
         });
-        
+
     } catch (error) {
         console.error('❌ Ошибка обновления моделей:', error);
     }
