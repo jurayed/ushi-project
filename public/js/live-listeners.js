@@ -1,6 +1,11 @@
 // public/js/live-listeners.js
 import { showError, showSuccess } from './ui.js';
 
+// Глобальные переменные для записи аудио
+let conversationMediaRecorder = null;
+let conversationAudioChunks = [];
+let listenersRefreshInterval = null;
+
 // Глобальные функции системы слушателей
 window.toggleEarRegistration = function () {
     if (!window.currentUser || !window.socket) {
@@ -33,6 +38,37 @@ window.toggleEarRegistration = function () {
     }
 };
 
+// --- Авто-обновление списка слушателей ---
+
+window.startListenersAutoRefresh = function () {
+    // Загружаем сразу
+    window.loadAvailableListeners();
+    window.loadEarsInfo();
+
+    // Очищаем предыдущий интервал если был
+    if (listenersRefreshInterval) clearInterval(listenersRefreshInterval);
+
+    // Устанавливаем новый интервал (5 секунд)
+    listenersRefreshInterval = setInterval(() => {
+        // Обновляем только если мы не в активной беседе (чтобы не отвлекать)
+        // Или можно обновлять всегда, но тихо
+        if (!window.currentConversationId) {
+            window.loadAvailableListeners();
+            window.loadEarsInfo();
+        }
+    }, 5000);
+
+    console.log('✅ Listeners auto-refresh started');
+};
+
+window.stopListenersAutoRefresh = function () {
+    if (listenersRefreshInterval) {
+        clearInterval(listenersRefreshInterval);
+        listenersRefreshInterval = null;
+        console.log('🛑 Listeners auto-refresh stopped');
+    }
+};
+
 // Загрузить список доступных слушателей
 window.loadAvailableListeners = async function () {
     try {
@@ -47,10 +83,11 @@ window.loadAvailableListeners = async function () {
         if (response.ok) {
             displayListenersList(data.listeners);
         } else {
-            showError('Ошибка загрузки: ' + data.error);
+            // Не показываем ошибку каждый раз при авто-обновлении, только в консоль
+            console.warn('Ошибка загрузки слушателей:', data.error);
         }
     } catch (error) {
-        showError('Ошибка загрузки слушателей: ' + error.message);
+        console.warn('Ошибка загрузки слушателей:', error.message);
     }
 };
 
@@ -63,6 +100,9 @@ function displayListenersList(listeners) {
         container.innerHTML = '<p style="text-align: center; color: #666;">Нет доступных слушателей</p>';
         return;
     }
+
+    // Сохраняем текущий HTML чтобы проверить изменилось ли что-то (простая оптимизация)
+    // Но для простоты пока просто перерисовываем
 
     container.innerHTML = listeners.map(listener => `
         <div class="listener-card glass-panel">
@@ -110,10 +150,124 @@ window.startConversationWith = async function (listenerId, listenerName) {
     }
 };
 
-window.sendConversationMessage = async function () {
+// --- Функции записи аудио ---
+
+window.startConversationAudio = async function () {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showError('Ваш браузер не поддерживает запись аудио');
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        conversationMediaRecorder = new MediaRecorder(stream);
+        conversationAudioChunks = [];
+
+        conversationMediaRecorder.ondataavailable = (event) => {
+            conversationAudioChunks.push(event.data);
+        };
+
+        conversationMediaRecorder.onstop = () => {
+            // Ничего не делаем здесь, отправка будет в sendConversationMessage
+        };
+
+        conversationMediaRecorder.start();
+
+        // Обновляем UI
+        document.getElementById('conversationRecordButton').style.display = 'none';
+        document.getElementById('conversationStopButton').style.display = 'inline-block';
+        document.getElementById('conversationCancelButton').style.display = 'inline-block';
+        document.getElementById('conversationMessageInput').placeholder = 'Запись идет...';
+        document.getElementById('conversationMessageInput').disabled = true;
+
+    } catch (error) {
+        console.error('Ошибка доступа к микрофону:', error);
+        showError('Не удалось получить доступ к микрофону');
+    }
+};
+
+window.stopConversationAudio = function () {
+    if (conversationMediaRecorder && conversationMediaRecorder.state !== 'inactive') {
+        conversationMediaRecorder.stop();
+        conversationMediaRecorder.stream.getTracks().forEach(track => track.stop());
+
+        // Обновляем UI
+        document.getElementById('conversationRecordButton').style.display = 'inline-block';
+        document.getElementById('conversationStopButton').style.display = 'none';
+        document.getElementById('conversationCancelButton').style.display = 'none';
+        document.getElementById('conversationMessageInput').placeholder = 'Голосовое сообщение записано. Нажмите отправить.';
+        document.getElementById('conversationMessageInput').disabled = false;
+
+        setTimeout(() => {
+            sendConversationMessage(true); // true флаг что это аудио
+        }, 500);
+    }
+};
+
+window.cancelConversationAudio = function () {
+    if (conversationMediaRecorder) {
+        conversationMediaRecorder.stop();
+        conversationMediaRecorder.stream.getTracks().forEach(track => track.stop());
+    }
+    conversationAudioChunks = [];
+    conversationMediaRecorder = null;
+
+    // Сброс UI
+    document.getElementById('conversationRecordButton').style.display = 'inline-block';
+    document.getElementById('conversationStopButton').style.display = 'none';
+    document.getElementById('conversationCancelButton').style.display = 'none';
+    document.getElementById('conversationMessageInput').placeholder = 'Сообщение...';
+    document.getElementById('conversationMessageInput').disabled = false;
+};
+
+// --- Конец функций записи ---
+
+window.sendConversationMessage = async function (isAudio = false) {
     const messageInput = document.getElementById('conversationMessageInput');
-    const message = messageInput?.value.trim();
-    if (!message) return;
+    let message = messageInput?.value.trim();
+    let mediaUrl = null;
+    let mediaType = null;
+
+    // Если это аудио сообщение
+    if (isAudio && conversationAudioChunks.length > 0) {
+        const audioBlob = new Blob(conversationAudioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'voice_message.webm');
+
+        try {
+            // Загружаем файл
+            const uploadResponse = await fetch('/api/upload/audio', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + window.currentToken
+                },
+                body: formData
+            });
+
+            const uploadResult = await uploadResponse.json();
+            if (uploadResponse.ok) {
+                mediaUrl = uploadResult.url;
+                mediaType = 'audio/webm';
+                message = '[Голосовое сообщение]'; // Текст заглушка
+            } else {
+                showError('Ошибка загрузки аудио: ' + uploadResult.error);
+                return;
+            }
+        } catch (error) {
+            showError('Ошибка загрузки: ' + error.message);
+            return;
+        }
+
+        // Очищаем чанки после успешной загрузки
+        conversationAudioChunks = [];
+        conversationMediaRecorder = null;
+
+        // Возвращаем UI в исходное состояние
+        document.getElementById('conversationMessageInput').placeholder = 'Сообщение...';
+    } else {
+        // Обычное текстовое сообщение
+        if (!message) return;
+    }
 
     try {
         const response = await fetch(`/api/conversations/${window.currentConversationId}/message`, {
@@ -122,7 +276,11 @@ window.sendConversationMessage = async function () {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + window.currentToken
             },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({
+                message,
+                media_url: mediaUrl,
+                media_type: mediaType
+            })
         });
 
         const result = await response.json();
@@ -133,6 +291,8 @@ window.sendConversationMessage = async function () {
             appendMessage({
                 sender_id: window.currentUser.id,
                 message_text: message,
+                media_url: mediaUrl,
+                media_type: mediaType,
                 sent_at: new Date().toISOString()
             }, true);
         } else {
@@ -173,6 +333,16 @@ function appendMessage(message, isOwn) {
     const textDiv = document.createElement('div');
     textDiv.textContent = message.message_text;
     msgDiv.appendChild(textDiv);
+
+    // Если есть медиа (аудио)
+    if (message.media_url && (message.media_type === 'audio/webm' || message.media_type === 'audio/mp3' || message.media_type === 'audio/wav')) {
+        const audioPlayer = document.createElement('audio');
+        audioPlayer.controls = true;
+        audioPlayer.src = message.media_url;
+        audioPlayer.style.marginTop = '5px';
+        audioPlayer.style.width = '100%';
+        msgDiv.appendChild(audioPlayer);
+    }
 
     // Время
     const timeDiv = document.createElement('div');

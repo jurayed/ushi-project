@@ -45,30 +45,45 @@ export function showMainInterface() {
     if (authSection) authSection.classList.add('hidden');
     if (mainInterface) mainInterface.classList.remove('hidden');
     if (userInfoPanel) userInfoPanel.style.display = 'block';
+
+    // По умолчанию показываем выбор режима
+    showModeSelection();
 }
 
-export function switchView(viewName) {
-    document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+// --- Новые функции для Split View ---
 
-    if (viewName === 'ai-chat') {
-        const aiChatView = document.getElementById('aiChatView');
-        if (aiChatView) aiChatView.classList.remove('hidden');
-        document.querySelector('.nav-item:nth-child(1)')?.classList.add('active');
-    } else if (viewName === 'live-listeners') {
-        const liveListenersView = document.getElementById('liveListenersView');
-        if (liveListenersView) liveListenersView.classList.remove('hidden');
-        document.querySelector('.nav-item:nth-child(2)')?.classList.add('active');
-    } else if (viewName === 'profile') {
-        const profileView = document.getElementById('profileView');
-        if (profileView) {
-            profileView.classList.remove('hidden');
-        } else {
-            showInfo('Profile page coming soon!');
-        }
-        document.querySelector('.nav-item:nth-child(3)')?.classList.add('active');
+export function showModeSelection() {
+    document.getElementById('modeSelectionSection').classList.remove('hidden');
+    document.getElementById('aiSection').classList.add('hidden');
+    document.getElementById('liveSection').classList.add('hidden');
+
+    // Останавливаем авто-обновление слушателей при выходе из Live режима
+    if (window.stopListenersAutoRefresh) {
+        window.stopListenersAutoRefresh();
     }
 }
+
+export function switchToMode(mode) {
+    document.getElementById('modeSelectionSection').classList.add('hidden');
+
+    if (mode === 'ai') {
+        document.getElementById('aiSection').classList.remove('hidden');
+        document.getElementById('liveSection').classList.add('hidden');
+        // Инициализация AI чата если нужно
+    } else if (mode === 'live') {
+        document.getElementById('aiSection').classList.add('hidden');
+        document.getElementById('liveSection').classList.remove('hidden');
+        // Загружаем слушателей и запускаем авто-обновление
+        if (window.loadAvailableListeners) {
+            window.loadAvailableListeners();
+        }
+        if (window.startListenersAutoRefresh) {
+            window.startListenersAutoRefresh();
+        }
+    }
+}
+
+// --- Конец новых функций ---
 
 export function showError(message) {
     showNotification(message, 'error');
@@ -117,7 +132,8 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
-window.switchView = switchView;
 window.showTab = showTab;
 window.showMainInterface = showMainInterface;
 window.showAuthInterface = showAuthInterface;
+window.switchToMode = switchToMode;
+window.showModeSelection = showModeSelection;

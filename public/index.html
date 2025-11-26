@@ -56,123 +56,175 @@
                 </div>
             </div>
 
-            <!-- ОСНОВНОЙ ИНТЕРФЕЙС (добавь этот блок) -->
+            <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
             <div id="mainInterface" class="hidden">
                 <div class="user-info">
                     <h3>Добро пожаловать, <span id="userName"></span>!</h3>
                     <button class="btn-secondary" onclick="logout()">Выйти</button>
                 </div>
 
-                <!-- Интерфейс чата -->
-                <div class="control-group">
-                    <h3>🎭 Настройки чата</h3>
+                <!-- Лендинг выбора режима (НОВОЕ) -->
+                <div id="modeSelectionSection" class="mode-selection">
+                    <h3>С кем вы хотите поговорить?</h3>
+                    <div class="mode-cards"
+                        style="display: flex; gap: 20px; justify-content: center; margin-top: 30px;">
+                        <div class="mode-card glass-panel" onclick="switchToMode('ai')"
+                            style="cursor: pointer; padding: 30px; width: 200px; text-align: center; transition: transform 0.2s;">
+                            <div style="font-size: 48px; margin-bottom: 15px;">🤖</div>
+                            <h4>ИИ Собеседник</h4>
+                            <p style="font-size: 14px; color: var(--text-muted);">Всегда доступен, поддержит и выслушает
+                            </p>
+                        </div>
+                        <div class="mode-card glass-panel" onclick="switchToMode('live')"
+                            style="cursor: pointer; padding: 30px; width: 200px; text-align: center; transition: transform 0.2s;">
+                            <div style="font-size: 48px; margin-bottom: 15px;">👥</div>
+                            <h4>Живой человек</h4>
+                            <p style="font-size: 14px; color: var(--text-muted);">Реальные люди, готовые помочь</p>
+                        </div>
+                    </div>
+                </div>
 
-                    <div class="control-row">
-                        <label for="provider">AI Провайдер:</label>
-                        <select id="provider">
-                            <!-- Опции загружаются через JavaScript -->
-                        </select>
+                <!-- Секция ИИ (AI Chat) -->
+                <div id="aiSection" class="hidden">
+                    <button class="btn-secondary" onclick="showModeSelection()" style="margin-bottom: 20px;">⬅ Назад к
+                        выбору</button>
+
+                    <div class="control-group">
+                        <h3>🤖 Настройки ИИ</h3>
+
+                        <div class="control-row">
+                            <label for="provider">AI Провайдер:</label>
+                            <select id="provider">
+                                <!-- Опции загружаются через JavaScript -->
+                            </select>
+                        </div>
+
+                        <div class="control-row">
+                            <label for="model">Модель:</label>
+                            <select id="model">
+                                <!-- Опции загружаются через JavaScript -->
+                            </select>
+                        </div>
+
+                        <div class="control-row">
+                            <label for="psychotype">Психотип:</label>
+                            <select id="psychotype">
+                                <option value="empath">Эмпат 🤗</option>
+                                <option value="optimist">Оптимист 🌟</option>
+                                <option value="rational">Рационалист 🧠</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <div class="control-row">
-                        <label for="model">Модель:</label>
-                        <select id="model">
-                            <!-- Опции загружаются через JavaScript -->
-                        </select>
+                    <!-- Чат с ИИ -->
+                    <div id="aiChatContainer" class="chat-messages"
+                        style="height: 400px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                        <!-- Сообщения будут здесь -->
                     </div>
 
-                    <div class="control-row">
-                        <label for="psychotype">Психотип:</label>
-                        <select id="psychotype">
-                            <option value="empath">Эмпат 🤗</option>
-                            <option value="optimist">Оптимист 🌟</option>
-                            <option value="rational">Рационалист 🧠</option>
-                        </select>
+                    <div id="typingIndicator" class="typing" style="display: none;">
+                        ⏳ ИИ печатает ответ...
                     </div>
 
-                    <div class="control-row">
-                        <label for="messageInput">Сообщение:</label>
-                        <input type="text" id="messageInput" placeholder="Напишите ваше сообщение...">
+                    <div class="chat-controls" style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="messageInput" class="form-input" placeholder="Напишите сообщение ИИ..."
+                            style="flex: 1;">
+
+                        <button class="btn btn-icon btn-primary" onclick="testAIChat()">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+
+                        <div class="voice-controls" style="display: inline-flex; gap: 5px;">
+                            <button id="recordButton" class="btn btn-secondary" onclick="startAudioMessage()"
+                                title="Голосовое сообщение">🎤</button>
+                            <button id="stopRecordButton" class="btn btn-danger" onclick="stopAudioMessage()"
+                                style="display: none;" title="Остановить">⏹️</button>
+                            <button id="cancelRecordButton" class="btn btn-secondary" onclick="cancelAudioMessage()"
+                                style="display: none;" title="Отмена">❌</button>
+                        </div>
                     </div>
 
-                    <div class="checkbox-group">
+                    <div class="checkbox-group" style="margin-top: 10px;">
                         <input type="checkbox" id="useStreaming" checked>
                         <label for="useStreaming" style="min-width: auto; font-weight: normal;">
-                            Использовать потоковую передачу (быстрее)
+                            Использовать потоковую передачу
                         </label>
                     </div>
                 </div>
 
-                <div class="buttons">
-                    <button class="btn-primary" onclick="testAIChat()">💬 Отправить ИИ</button>
-                    <button class="btn-secondary" onclick="loadProviders()">🔄 Обновить провайдеры</button>
-                    <button class="btn-primary" onclick="startAudioCall()">📞 Аудиозвонок</button>
-                    <button class="btn-primary" onclick="startVideoCall()">🎥 Видеозвонок</button>
-                    <div class="voice-controls" style="display: inline-block;">
-                        <button id="recordButton" class="btn-secondary" onclick="startAudioMessage()">🎤
-                            Аудиосообщение</button>
-                        <button id="stopRecordButton" class="btn-danger" onclick="stopAudioMessage()"
-                            style="display: none;">⏹️ Стоп</button>
-                        <button id="cancelRecordButton" class="btn-secondary" onclick="cancelAudioMessage()"
-                            style="display: none;">❌ Отмена</button>
-                    </div>
-                </div>
+                <!-- Секция Живого общения (Live Chat) -->
+                <div id="liveSection" class="hidden">
+                    <button class="btn-secondary" onclick="showModeSelection()" style="margin-bottom: 20px;">⬅ Назад к
+                        выбору</button>
 
-                <div id="typingIndicator" class="typing">
-                    ⏳ ИИ печатает ответ... Пожалуйста, подождите.
-                    <div id="earsInfo" style="font-size: 14px; color: var(--success);"></div>
-                </div>
+                    <div class="content-body">
+                        <!-- Кнопки управления слушателем -->
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <div id="earsInfo" style="font-size: 14px; color: var(--success); margin-bottom: 10px;">
+                            </div>
 
-                <div class="content-body">
-                    <!-- Кнопки управления -->
-                    <div style="text-align: center; margin-bottom: 30px;">
-                        <button class="btn btn-primary" style="padding: 15px 30px;" onclick="loadAvailableListeners()">
-                            <i class="fas fa-search"></i> Показать доступных слушателей
-                        </button>
-                        <button class="btn btn-secondary" id="earToggleButton" onclick="toggleEarRegistration()"
-                            style="margin-left: 10px;">
-                            <i class="fas fa-ear-listen"></i> Стать слушателем
-                        </button>
-                    </div>
-
-                    <!-- Список доступных слушателей -->
-                    <div id="listenersListContainer"
-                        style="margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto;">
-                        <!-- Список будет загружен динамически -->
-                    </div>
-
-                    <!-- Активная сессия -->
-                    <div id="conversationSection" class="hidden"
-                        style="height: 100%; display: flex; flex-direction: column;">
-
-                        <div class="glass-panel" style="padding: 15px; margin-bottom: 15px; text-align: center;">
-                            <strong>💬 Разговор с:</strong> <span id="conversationPartner"
-                                style="color: var(--accent);">...</span>
+                            <button class="btn btn-secondary" id="earToggleButton" onclick="toggleEarRegistration()">
+                                <i class="fas fa-ear-listen"></i> Стать слушателем
+                            </button>
                         </div>
 
-                        <div id="conversationMessages" class="chat-messages"
-                            style="flex: 1; min-height: 300px; max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                        <!-- Список доступных слушателей -->
+                        <div id="listenersListContainer"
+                            style="margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                            <!-- Список будет загружен динамически -->
+                            <p style="text-align: center; color: #666;">Загрузка слушателей...</p>
                         </div>
 
-                        <div class="chat-controls" style="display: flex; gap: 10px;">
-                            <input type="text" id="conversationMessageInput" class="form-input"
-                                placeholder="Сообщение..." style="flex: 1;">
-                            <button class="btn btn-icon btn-primary" onclick="sendConversationMessage()">
-                                <i class="fas fa-paper-plane"></i>
-                            </button>
-                            <button class="btn btn-secondary" onclick="closeConversation()">
-                                Завершить
-                            </button>
+                        <!-- Активная сессия (Чат с человеком) -->
+                        <div id="conversationSection" class="hidden"
+                            style="height: 100%; display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
+
+                            <div class="glass-panel"
+                                style="padding: 15px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong>💬 Разговор с:</strong> <span id="conversationPartner"
+                                        style="color: var(--accent);">...</span>
+                                </div>
+                                <div class="call-buttons">
+                                    <button class="btn btn-sm btn-primary" onclick="startAudioCall()"
+                                        title="Аудиозвонок">📞</button>
+                                    <button class="btn btn-sm btn-primary" onclick="startVideoCall()"
+                                        title="Видеозвонок">🎥</button>
+                                </div>
+                            </div>
+
+                            <div id="conversationMessages" class="chat-messages"
+                                style="flex: 1; min-height: 300px; max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                            </div>
+
+                            <div class="chat-controls" style="display: flex; gap: 10px;">
+                                <input type="text" id="conversationMessageInput" class="form-input"
+                                    placeholder="Сообщение..." style="flex: 1;">
+                                <button class="btn btn-icon btn-primary" onclick="sendConversationMessage()">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                                <div class="voice-controls" style="display: inline-flex; gap: 5px;">
+                                    <button id="conversationRecordButton" class="btn btn-secondary"
+                                        onclick="startConversationAudio()" title="Голосовое сообщение">🎤</button>
+                                    <button id="conversationStopButton" class="btn btn-danger"
+                                        onclick="stopConversationAudio()" style="display: none;"
+                                        title="Остановить">⏹️</button>
+                                    <button id="conversationCancelButton" class="btn btn-secondary"
+                                        onclick="cancelConversationAudio()" style="display: none;"
+                                        title="Отмена">❌</button>
+                                </div>
+                                <button class="btn btn-secondary" onclick="closeConversation()">
+                                    Завершить
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    </div>
 
     <!-- Подключаем JavaScript -->
-    <!-- В конце body заменить подключение скриптов на: -->
     <script type="module" src="js/utils.js"></script>
     <script type="module" src="js/ui.js"></script>
     <script type="module" src="js/auth.js"></script>
@@ -252,6 +304,11 @@
 
         .hidden {
             display: none !important;
+        }
+
+        .mode-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
         }
     </style>
 </body>
