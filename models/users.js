@@ -2,141 +2,96 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { pool } = require('./database');
 
-// Регистрация пользователя
+// Регистрация
 async function registerUser(req, res) {
   try {
-    console.log('🔑 Попытка регистрации:', req.body);
-    
     const { username, email, password } = req.body;
     
     if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Все поля обязательны' });
+      return res.status(400).json({ error: 'Заполните все поля' });
     }
 
-    const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
+    // Хешируем пароль
+    const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
       'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, username, email, created_at',
       [username, email, passwordHash]
     );
 
-    console.log('✅ Пользователь зарегистрирован:', username);
-
     res.status(201).json({
-      message: 'Пользователь успешно зарегистрирован',
+      message: 'Регистрация успешна',
       user: result.rows[0]
     });
   } catch (error) {
-    console.error('❌ Ошибка регистрации:', error);
-    if (error.code === '23505') {
-      res.status(400).json({ error: 'Пользователь с таким именем или email уже существует' });
-    } else {
-      res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    if (error.code === '23505') { // Код ошибки Postgres "Duplicate key"
+      return res.status(400).json({ error: 'Такой пользователь или email уже существует' });
     }
+    console.error('Register Error:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
 
-// Вход пользователя
+// Вход
 async function loginUser(req, res) {
   try {
-    console.log('🔑 Попытка входа:', req.body);
-    
     const { username, password } = req.body;
+    
+    if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
 
-    if (!username || !password) {
-      console.log('❌ Не все поля заполнены');
-      return res.status(400).json({ error: 'Все поля обязательны' });
-    }
-
-    console.log('🔍 Ищем пользователя:', username);
-    const result = await pool.query(
-      'SELECT * FROM users WHERE username = $1',
-      [username]
-    );
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
 
     if (result.rows.length === 0) {
-      console.log('❌ Пользователь не найден:', username);
-      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
     }
 
     const user = result.rows[0];
-    console.log('✅ Пользователь найден:', user.username);
-
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
-    
+
     if (!passwordMatch) {
-      console.log('❌ Неверный пароль для пользователя:', username);
-      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
     }
 
-    // Создаем JWT токен
+    // Токен
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        username: user.username 
-      }, 
+      { id: user.id, username: user.username }, 
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '7d' } // Увеличил время жизни токена для удобства
     );
 
-    console.log('✅ Вход выполнен успешно, токен выдан для:', username);
-
     res.json({
-      message: 'Вход выполнен успешно',
-      token: token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        created_at: user.created_at
-      }
+      message: 'Вход выполнен',
+      token,
+      user: { id: user.id, username: user.username, email: user.email }
     });
   } catch (error) {
-    console.error('❌ Ошибка входа:', error);
-    console.error('🔧 Детали ошибки:', error.message);
-    res.status(500).json({ 
-      error: 'Внутренняя ошибка сервера',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Login Error:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
 
-// Получить профиль пользователя
+// Профиль
 async function getUserProfile(req, res) {
   try {
     const result = await pool.query(
       'SELECT id, username, email, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
-    }
-    
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Пользователь не найден' });
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Ошибка получения профиля:', error);
-    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
 
-// Получить список пользователей (для админов)
+// Список (для админки)
 async function getUsers(req, res) {
   try {
-    const result = await pool.query(
-      'SELECT id, username, email, created_at FROM users ORDER BY created_at DESC'
-    );
+    const result = await pool.query('SELECT id, username, email, created_at FROM users ORDER BY created_at DESC LIMIT 100');
     res.json(result.rows);
   } catch (error) {
-    console.error('Ошибка получения пользователей:', error);
-    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
 
-module.exports = {
-  registerUser,
-  loginUser,
-  getUserProfile,
-  getUsers
-};
+module.exports = { registerUser, loginUser, getUserProfile, getUsers };

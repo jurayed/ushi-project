@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Character Test</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1a1a2e;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            z-index: 10;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #4a90e2;
+        }
+
+        #error-log {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: red;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            pointer-events: auto;
+            box-shadow: 0 0 15px rgba(74, 144, 226, 0.5);
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(74, 144, 226, 0.8);
+        }
+
+        button.active {
+            background: #e24a4a;
+            box-shadow: 0 0 15px rgba(226, 74, 74, 0.5);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="info">
+        <h1>Procedural 3D Avatar</h1>
+        <p>Move mouse to look • Click button to talk</p>
+    </div>
+
+    <div id="loading">Loading 3D Engine...</div>
+    <div id="error-log"></div>
+
+    <div id="controls">
+        <button id="talkBtn">Activate Voice 🎤</button>
+    </div>
+
+    <!-- Using unpkg for better reliability -->
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+    <script>
+        function logError(msg) {
+            console.error(msg);
+            document.getElementById('error-log').innerText += msg + '\n';
+        }
+
+        window.onerror = function (msg, url, line) {
+            logError(`Error: ${msg} at line ${line}`);
+        };
+
+        window.onload = function () {
+            try {
+                if (typeof THREE === 'undefined') {
+                    throw new Error('Three.js failed to load');
+                }
+
+                document.getElementById('loading').style.display = 'none';
+
+                // --- SCENE SETUP ---
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x1a1a2e);
+
+                const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.z = 7; // Further back for huge wings
+                camera.position.y = 0.5;
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                document.body.appendChild(renderer.domElement);
+
+                // --- LIGHTING ---
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+                scene.add(ambientLight);
+
+                const pointLight = new THREE.PointLight(0xffddaa, 1.5, 10); // Warmer light
+                pointLight.position.set(2, 2, 2);
+                scene.add(pointLight);
+
+                const rimLight = new THREE.SpotLight(0x4a90e2, 2);
+                rimLight.position.set(-2, 3, -2);
+                rimLight.lookAt(0, 0, 0);
+                scene.add(rimLight);
+
+                // --- CHARACTER GROUP ---
+                const character = new THREE.Group();
+                scene.add(character);
+
+                // Materials
+                const bodyMat = new THREE.MeshStandardMaterial({
+                    color: 0x2a2a4a,
+                    roughness: 0.4,
+                    metalness: 0.6
+                });
+
+                // Wing Colors (Eagle Brown)
+                const featherPrimaryMat = new THREE.MeshStandardMaterial({
+                    color: 0x3d2b1f, // Dark Brown
+                    roughness: 0.7,
+                    metalness: 0.1,
+                    side: THREE.DoubleSide
+                });
+                const featherCovertMat = new THREE.MeshStandardMaterial({
+                    color: 0x5c4033, // Lighter Brown
+                    roughness: 0.6,
+                    metalness: 0.1,
+                    side: THREE.DoubleSide
+                });
+
+                const earGlowMat = new THREE.MeshStandardMaterial({
+                    color: 0xffccaa,
+                    roughness: 0.3,
+                    metalness: 0.1,
+                    emissive: 0x000000
+                });
+                const beakMat = new THREE.MeshStandardMaterial({
+                    color: 0xffaa00,
+                    roughness: 0.2,
+                    metalness: 0.5
+                });
+                const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+                const eyePupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+                // 1. BODY
+                const bodyGeo = new THREE.CapsuleGeometry(0.6, 0.9, 4, 16);
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                character.add(body);
+
+                // 2. HUGE REALISTIC EAGLE WINGS (Multi-layered)
+                function createEagleWing(isLeft) {
+                    const wingGroup = new THREE.Group();
+
+                    // Wing Arm (Bone structure)
+                    // Humerus
+                    const arm1Geo = new THREE.CapsuleGeometry(0.12, 1.0, 4, 8);
+                    const arm1 = new THREE.Mesh(arm1Geo, featherCovertMat);
+                    arm1.rotation.z = isLeft ? 0.5 : -0.5;
+                    arm1.position.x = isLeft ? 0.4 : -0.4;
+                    wingGroup.add(arm1);
+
+                    // Forearm (Ulna/Radius) - extends further out
+                    const arm2Geo = new THREE.CapsuleGeometry(0.1, 1.2, 4, 8);
+                    const arm2 = new THREE.Mesh(arm2Geo, featherCovertMat);
+                    arm2.rotation.z = isLeft ? 1.2 : -1.2;
+                    arm2.position.x = isLeft ? 1.2 : -1.2;
+                    arm2.position.y = 0.3;
+                    wingGroup.add(arm2);
+
+                    // --- FEATHER GENERATION ---
+
+                    // Layer 1: Primaries (Longest, outer)
+                    const primaryGeo = new THREE.CylinderGeometry(0.02, 0.15, 1.8, 8);
+                    primaryGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, 0.1)); // Flatten
+                    primaryGeo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, -0.9, 0)); // Pivot at top
+
+                    const numPrimaries = 10;
+                    for (let i = 0; i < numPrimaries; i++) {
+                        const feather = new THREE.Mesh(primaryGeo, featherPrimaryMat);
+                        const t = i / numPrimaries;
+
+                        // Position along the forearm
+                        const xBase = (isLeft ? 1 : -1) * (0.8 + t * 0.8);
+                        const yBase = 0.3 - t * 0.2;
+
+                        feather.position.set(xBase, yBase, -0.05);
+
+                        // Fan out
+                        const angle = (isLeft ? -1 : 1) * (0.8 + t * 1.0);
+                        feather.rotation.z = angle;
+
+                        wingGroup.add(feather);
+                    }
+
+                    // Layer 2: Secondaries (Inner flight feathers)
+                    const secondaryGeo = new THREE.CylinderGeometry(0.02, 0.18, 1.4, 8);
+                    secondaryGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, 0.1));
+                    secondaryGeo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, -0.7, 0));
+
+                    const numSecondaries = 8;
+                    for (let i = 0; i < numSecondaries; i++) {
+                        const feather = new THREE.Mesh(secondaryGeo, featherPrimaryMat);
+                        const t = i / numSecondaries;
+
+                        // Position along the upper arm
+                        const xBase = (isLeft ? 1 : -1) * (0.1 + t * 0.7);
+                        const yBase = 0.0;
+
+                        feather.position.set(xBase, yBase, -0.02);
+
+                        // Point down mostly
+                        const angle = (isLeft ? -1 : 1) * (0.2 + t * 0.3);
+                        feather.rotation.z = angle;
+
+                        wingGroup.add(feather);
+                    }
+
+                    // Layer 3: Coverts (Top layer, shorter)
+                    const covertGeo = new THREE.CylinderGeometry(0.02, 0.15, 0.8, 8);
+                    covertGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, 0.15));
+                    covertGeo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, -0.4, 0));
+
+                    const numCoverts = 15;
+                    for (let i = 0; i < numCoverts; i++) {
+                        const feather = new THREE.Mesh(covertGeo, featherCovertMat);
+                        const t = i / numCoverts;
+
+                        // Span across both arms
+                        const xBase = (isLeft ? 1 : -1) * (0.2 + t * 1.4);
+                        const yBase = 0.1 + (t > 0.5 ? 0.2 : 0); // Follow arm height
+
+                        feather.position.set(xBase, yBase, 0.05); // On top
+
+                        const angle = (isLeft ? -1 : 1) * (0.3 + t * 0.8);
+                        feather.rotation.z = angle;
+
+                        wingGroup.add(feather);
+                    }
+
+                    return wingGroup;
+                }
+
+                const leftWing = createEagleWing(true);
+                leftWing.position.set(-0.4, 0.3, -0.3);
+                body.add(leftWing);
+
+                const rightWing = createEagleWing(false);
+                rightWing.position.set(0.4, 0.3, -0.3);
+                body.add(rightWing);
+
+
+                // 3. FEET (Claws)
+                const footGroup = new THREE.Group();
+                body.add(footGroup);
+
+                function createClaw(xPos) {
+                    const clawGroup = new THREE.Group();
+                    clawGroup.position.set(xPos, -0.8, 0.2);
+
+                    const toeGeo = new THREE.ConeGeometry(0.05, 0.25, 8);
+                    const toeMat = beakMat;
+
+                    // 3 Toes
+                    for (let i = -1; i <= 1; i++) {
+                        const toe = new THREE.Mesh(toeGeo, toeMat);
+                        toe.position.x = i * 0.1;
+                        toe.rotation.x = -0.5; // Point forward
+                        toe.rotation.z = i * 0.3; // Splay out
+                        clawGroup.add(toe);
+                    }
+                    return clawGroup;
+                }
+
+                const leftFoot = createClaw(-0.25);
+                footGroup.add(leftFoot);
+
+                const rightFoot = createClaw(0.25);
+                footGroup.add(rightFoot);
+
+                // 4. HEAD GROUP
+                const headGroup = new THREE.Group();
+                headGroup.position.y = 0.65;
+                character.add(headGroup);
+
+                // Head Shape
+                const headGeo = new THREE.SphereGeometry(0.55, 32, 32);
+                const head = new THREE.Mesh(headGeo, bodyMat);
+                headGroup.add(head);
+
+                // 5. HUMAN EARS (Big)
+                function createHumanEar(isLeft) {
+                    const earGroup = new THREE.Group();
+
+                    // Outer Ear (Pinna)
+                    const outerEarGeo = new THREE.TorusGeometry(0.15, 0.05, 8, 16, Math.PI * 1.2);
+                    const outerEar = new THREE.Mesh(outerEarGeo, earGlowMat);
+                    outerEar.rotation.z = isLeft ? 0.5 : -0.5;
+                    earGroup.add(outerEar);
+
+                    // Lobe
+                    const lobeGeo = new THREE.SphereGeometry(0.1, 16, 16);
+                    lobeGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1.5, 0.5));
+                    const lobe = new THREE.Mesh(lobeGeo, earGlowMat);
+                    lobe.position.set(0, 0, -0.05);
+                    earGroup.add(lobe);
+
+                    return earGroup;
+                }
+
+                const leftEar = createHumanEar(true);
+                leftEar.position.set(-0.55, 0.1, 0);
+                leftEar.rotation.y = -0.3;
+                headGroup.add(leftEar);
+
+                const rightEar = createHumanEar(false);
+                rightEar.position.set(0.55, 0.1, 0);
+                rightEar.rotation.y = 0.3;
+                rightEar.scale.x = -1;
+                headGroup.add(rightEar);
+
+                // Eyes Container
+                const leftEyeGroup = new THREE.Group();
+                leftEyeGroup.position.set(-0.2, 0.1, 0.45);
+                headGroup.add(leftEyeGroup);
+
+                const rightEyeGroup = new THREE.Group();
+                rightEyeGroup.position.set(0.2, 0.1, 0.45);
+                headGroup.add(rightEyeGroup);
+
+                // Eye Geometry
+                const eyeGeo = new THREE.SphereGeometry(0.18, 32, 32);
+                const leftEye = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+                leftEyeGroup.add(leftEye);
+                const rightEye = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+                rightEyeGroup.add(rightEye);
+
+                // Pupils
+                const pupilGeo = new THREE.SphereGeometry(0.08, 32, 32);
+                const leftPupil = new THREE.Mesh(pupilGeo, eyePupilMat);
+                leftPupil.position.z = 0.15;
+                leftEyeGroup.add(leftPupil);
+
+                const rightPupil = new THREE.Mesh(pupilGeo, eyePupilMat);
+                rightPupil.position.z = 0.15;
+                rightEyeGroup.add(rightPupil);
+
+                // Eyelids
+                const eyelidGeo = new THREE.SphereGeometry(0.19, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2);
+                const leftEyelid = new THREE.Mesh(eyelidGeo, bodyMat);
+                leftEyelid.rotation.x = -Math.PI / 2;
+                leftEyeGroup.add(leftEyelid);
+
+                const rightEyelid = new THREE.Mesh(eyelidGeo, bodyMat);
+                rightEyelid.rotation.x = -Math.PI / 2;
+                rightEyeGroup.add(rightEyelid);
+
+                // 6. REALISTIC BEAK (Big & Hooked)
+                const beakGroup = new THREE.Group();
+                beakGroup.position.set(0, -0.1, 0.5);
+                headGroup.add(beakGroup);
+
+                const beakBaseGeo = new THREE.ConeGeometry(0.12, 0.3, 16);
+                const beakBase = new THREE.Mesh(beakBaseGeo, beakMat);
+                beakBase.rotation.x = Math.PI / 2;
+                beakBase.position.z = 0.15;
+                beakGroup.add(beakBase);
+
+                const beakTipGeo = new THREE.ConeGeometry(0.08, 0.2, 16);
+                const beakTip = new THREE.Mesh(beakTipGeo, beakMat);
+                beakTip.rotation.x = Math.PI / 1.5;
+                beakTip.position.set(0, -0.08, 0.35);
+                beakGroup.add(beakTip);
+
+                const beakBottomGeo = new THREE.ConeGeometry(0.08, 0.2, 16);
+                const beakBottom = new THREE.Mesh(beakBottomGeo, beakMat);
+                beakBottom.rotation.x = Math.PI / 2;
+                beakBottom.position.y = -0.1;
+                beakGroup.add(beakBottom);
+
+
+                // --- ANIMATION VARIABLES ---
+                let mouse = new THREE.Vector2();
+                let targetRotation = new THREE.Vector2();
+                let isBlinking = false;
+                let isFlapping = false;
+                let mouthOpenness = 0;
+                let audioContext, analyser, dataArray;
+                let isListening = false;
+
+                // --- EVENTS ---
+                document.addEventListener('mousemove', (e) => {
+                    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                });
+
+                window.addEventListener('resize', () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+                document.getElementById('talkBtn').addEventListener('click', toggleAudio);
+
+                // --- LOGIC ---
+
+                function toggleAudio() {
+                    if (isListening) {
+                        if (audioContext) audioContext.close();
+                        isListening = false;
+                        document.getElementById('talkBtn').textContent = 'Activate Voice 🎤';
+                        document.getElementById('talkBtn').classList.remove('active');
+                        mouthOpenness = 0;
+                    } else {
+                        startAudio();
+                    }
+                }
+
+                async function startAudio() {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        analyser = audioContext.createAnalyser();
+                        const source = audioContext.createMediaStreamSource(stream);
+                        source.connect(analyser);
+
+                        analyser.fftSize = 256;
+                        dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                        isListening = true;
+                        document.getElementById('talkBtn').textContent = 'Listening... 🔴';
+                        document.getElementById('talkBtn').classList.add('active');
+                    } catch (err) {
+                        console.error(err);
+                        alert('Microphone access denied');
+                    }
+                }
+
+                function blink() {
+                    if (isBlinking) return;
+                    isBlinking = true;
+                    let startTime = Date.now();
+                    function animateBlink() {
+                        const now = Date.now();
+                        const progress = (now - startTime) / 150;
+                        if (progress < 0.5) {
+                            const val = -Math.PI / 2 + (Math.PI / 2 * (progress * 2));
+                            leftEyelid.rotation.x = val;
+                            rightEyelid.rotation.x = val;
+                            requestAnimationFrame(animateBlink);
+                        } else if (progress < 1) {
+                            const val = 0 - (Math.PI / 2 * ((progress - 0.5) * 2));
+                            leftEyelid.rotation.x = val;
+                            rightEyelid.rotation.x = val;
+                            requestAnimationFrame(animateBlink);
+                        } else {
+                            leftEyelid.rotation.x = -Math.PI / 2;
+                            rightEyelid.rotation.x = -Math.PI / 2;
+                            isBlinking = false;
+                            setTimeout(blink, Math.random() * 3000 + 2000);
+                        }
+                    }
+                    animateBlink();
+                }
+                setTimeout(blink, 2000);
+
+                function flapWings() {
+                    if (isFlapping) return;
+                    isFlapping = true;
+                    let startTime = Date.now();
+                    const duration = 1200; // Slow, majestic flap
+
+                    function animateFlap() {
+                        const now = Date.now();
+                        const progress = (now - startTime) / duration;
+
+                        if (progress < 1) {
+                            // Flap sine wave
+                            const angle = Math.sin(progress * Math.PI * 2) * 0.6;
+
+                            // Rotate entire wing group
+                            leftWing.rotation.z = angle;
+                            rightWing.rotation.z = -angle;
+
+                            requestAnimationFrame(animateFlap);
+                        } else {
+                            leftWing.rotation.z = 0;
+                            rightWing.rotation.z = 0;
+                            isFlapping = false;
+                            setTimeout(flapWings, Math.random() * 5000 + 3000);
+                        }
+                    }
+                    animateFlap();
+                }
+                setTimeout(flapWings, 3000);
+
+                // --- MAIN LOOP ---
+                function animate() {
+                    requestAnimationFrame(animate);
+
+                    const time = Date.now() * 0.001;
+
+                    // 1. Idle Animation (Breathing/Floating)
+                    character.position.y = Math.sin(time * 1) * 0.1 - 0.5;
+                    body.scale.set(1 + Math.sin(time * 2) * 0.02, 1 - Math.sin(time * 2) * 0.02, 1);
+
+                    // 2. Mouse Tracking (Smooth damping)
+                    targetRotation.x = mouse.y * 0.5;
+                    targetRotation.y = mouse.x * 0.5;
+
+                    headGroup.rotation.x += (targetRotation.x - headGroup.rotation.x) * 0.1;
+                    headGroup.rotation.y += (targetRotation.y - headGroup.rotation.y) * 0.1;
+
+                    // Body follows head slightly
+                    character.rotation.y += (targetRotation.y * 0.5 - character.rotation.y) * 0.05;
+
+                    // 3. Audio Analysis (Lip Sync)
+                    if (isListening && analyser) {
+                        analyser.getByteFrequencyData(dataArray);
+                        let sum = 0;
+                        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                        const avg = sum / dataArray.length;
+
+                        // Map volume to openness
+                        const targetOpenness = Math.max(0, (avg - 10) / 50);
+                        mouthOpenness += (targetOpenness - mouthOpenness) * 0.3; // Smooth it
+                    } else {
+                        mouthOpenness += (0 - mouthOpenness) * 0.1;
+                    }
+
+                    // Apply mouth openness
+                    beakBottom.rotation.x = Math.PI / 2 + (mouthOpenness * 0.5);
+                    beakBottom.position.y = -0.1 - (mouthOpenness * 0.05);
+
+                    // Glow EARS when talking loud
+                    if (mouthOpenness > 0.2) {
+                        earGlowMat.emissive.setHex(0x00ffff);
+                        earGlowMat.color.setHex(0x00ffff);
+                    } else {
+                        earGlowMat.emissive.setHex(0x000000);
+                        earGlowMat.color.setHex(0xffccaa);
+                    }
+
+                    renderer.render(scene, camera);
+                }
+
+                animate();
+
+            } catch (e) {
+                logError(e.message);
+            }
+        };
+    </script>
+</body>
+
+</html>

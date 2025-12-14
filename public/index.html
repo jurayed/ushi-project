@@ -1,318 +1,173 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🧠 Уши - Платформа поддержки</title>
+    <title>Ushi Project</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js"></script>
 </head>
-
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🧠 Уши - Платформа поддержки</h1>
-            <p>Выговорись и получи поддержку</p>
-        </div>
 
-        <div class="content">
-            <!-- Секция аутентификации -->
-            <div id="authSection" class="auth-section">
-                <div class="tab-buttons">
-                    <button class="tab-button active" onclick="showTab('login')">Вход</button>
-                    <button class="tab-button" onclick="showTab('register')">Регистрация</button>
-                </div>
-
-                <!-- Форма входа -->
-                <div id="loginForm" class="auth-form">
-                    <h3>Вход в систему</h3>
-                    <div class="form-group">
-                        <label for="loginUsername">Имя пользователя:</label>
-                        <input type="text" id="loginUsername" placeholder="Введите ваш username">
-                    </div>
-                    <div class="form-group">
-                        <label for="loginPassword">Пароль:</label>
-                        <input type="password" id="loginPassword" placeholder="Введите ваш пароль">
-                    </div>
-                    <button class="btn-primary" onclick="login()">Войти</button>
-                </div>
-
-                <!-- Форма регистрации -->
-                <div id="registerForm" class="auth-form hidden">
-                    <h3>Регистрация</h3>
-                    <div class="form-group">
-                        <label for="regUsername">Имя пользователя:</label>
-                        <input type="text" id="regUsername" placeholder="Придумайте username">
-                    </div>
-                    <div class="form-group">
-                        <label for="regEmail">Email:</label>
-                        <input type="email" id="regEmail" placeholder="Введите ваш email">
-                    </div>
-                    <div class="form-group">
-                        <label for="regPassword">Пароль:</label>
-                        <input type="password" id="regPassword" placeholder="Придумайте пароль">
-                    </div>
-                    <button class="btn-primary" onclick="register()">Зарегистрироваться</button>
-                </div>
+    <!-- АВТОРИЗАЦИЯ -->
+    <div id="authSection" class="container" style="justify-content: center;">
+        <div class="glass-panel auth-box">
+            <h1 class="logo" style="margin-bottom: 30px;">👂 Ushi Project</h1>
+            <div class="auth-tabs">
+                <div class="auth-tab active" onclick="showTab('login')">Вход</div>
+                <div class="auth-tab" onclick="showTab('register')">Регистрация</div>
             </div>
 
-            <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
-            <div id="mainInterface" class="hidden">
-                <div class="user-info">
-                    <h3>Добро пожаловать, <span id="userName"></span>!</h3>
-                    <button class="btn-secondary" onclick="logout()">Выйти</button>
-                </div>
+            <div id="loginForm">
+                <input type="text" id="loginUsername" placeholder="Имя пользователя">
+                <input type="password" id="loginPassword" placeholder="Пароль">
+                <button class="btn btn-primary w-100" onclick="login()">Войти</button>
+            </div>
 
-                <!-- Лендинг выбора режима (НОВОЕ) -->
-                <div id="modeSelectionSection" class="mode-selection">
-                    <h3>С кем вы хотите поговорить?</h3>
-                    <div class="mode-cards"
-                        style="display: flex; gap: 20px; justify-content: center; margin-top: 30px;">
-                        <div class="mode-card glass-panel" onclick="switchToMode('ai')"
-                            style="cursor: pointer; padding: 30px; width: 200px; text-align: center; transition: transform 0.2s;">
-                            <div style="font-size: 48px; margin-bottom: 15px;">🤖</div>
-                            <h4>ИИ Собеседник</h4>
-                            <p style="font-size: 14px; color: var(--text-muted);">Всегда доступен, поддержит и выслушает
-                            </p>
-                        </div>
-                        <div class="mode-card glass-panel" onclick="switchToMode('live')"
-                            style="cursor: pointer; padding: 30px; width: 200px; text-align: center; transition: transform 0.2s;">
-                            <div style="font-size: 48px; margin-bottom: 15px;">👥</div>
-                            <h4>Живой человек</h4>
-                            <p style="font-size: 14px; color: var(--text-muted);">Реальные люди, готовые помочь</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Секция ИИ (AI Chat) -->
-                <div id="aiSection" class="hidden">
-                    <button class="btn-secondary" onclick="showModeSelection()" style="margin-bottom: 20px;">⬅ Назад к
-                        выбору</button>
-
-                    <div class="control-group">
-                        <h3>🤖 Настройки ИИ</h3>
-
-                        <div class="control-row">
-                            <label for="provider">AI Провайдер:</label>
-                            <select id="provider">
-                                <!-- Опции загружаются через JavaScript -->
-                            </select>
-                        </div>
-
-                        <div class="control-row">
-                            <label for="model">Модель:</label>
-                            <select id="model">
-                                <!-- Опции загружаются через JavaScript -->
-                            </select>
-                        </div>
-
-                        <div class="control-row">
-                            <label for="psychotype">Психотип:</label>
-                            <select id="psychotype">
-                                <option value="empath">Эмпат 🤗</option>
-                                <option value="optimist">Оптимист 🌟</option>
-                                <option value="rational">Рационалист 🧠</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Чат с ИИ -->
-                    <div id="aiChatContainer" class="chat-messages"
-                        style="height: 400px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
-                        <!-- Сообщения будут здесь -->
-                    </div>
-
-                    <div id="typingIndicator" class="typing" style="display: none;">
-                        ⏳ ИИ печатает ответ...
-                    </div>
-
-                    <div class="chat-controls" style="display: flex; gap: 10px; align-items: center;">
-                        <input type="text" id="messageInput" class="form-input" placeholder="Напишите сообщение ИИ..."
-                            style="flex: 1;">
-
-                        <button class="btn btn-icon btn-primary" onclick="testAIChat()">
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
-
-                        <div class="voice-controls" style="display: inline-flex; gap: 5px;">
-                            <button id="recordButton" class="btn btn-secondary" onclick="startAudioMessage()"
-                                title="Голосовое сообщение">🎤</button>
-                            <button id="stopRecordButton" class="btn btn-danger" onclick="stopAudioMessage()"
-                                style="display: none;" title="Остановить">⏹️</button>
-                            <button id="cancelRecordButton" class="btn btn-secondary" onclick="cancelAudioMessage()"
-                                style="display: none;" title="Отмена">❌</button>
-                        </div>
-                    </div>
-
-                    <div class="checkbox-group" style="margin-top: 10px;">
-                        <input type="checkbox" id="useStreaming" checked>
-                        <label for="useStreaming" style="min-width: auto; font-weight: normal;">
-                            Использовать потоковую передачу
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Секция Живого общения (Live Chat) -->
-                <div id="liveSection" class="hidden">
-                    <button class="btn-secondary" onclick="showModeSelection()" style="margin-bottom: 20px;">⬅ Назад к
-                        выбору</button>
-
-                    <div class="content-body">
-                        <!-- Кнопки управления слушателем -->
-                        <div style="text-align: center; margin-bottom: 30px;">
-                            <div id="earsInfo" style="font-size: 14px; color: var(--success); margin-bottom: 10px;">
-                            </div>
-
-                            <button class="btn btn-secondary" id="earToggleButton" onclick="toggleEarRegistration()">
-                                <i class="fas fa-ear-listen"></i> Стать слушателем
-                            </button>
-                        </div>
-
-                        <!-- Список доступных слушателей -->
-                        <div id="listenersListContainer"
-                            style="margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto;">
-                            <!-- Список будет загружен динамически -->
-                            <p style="text-align: center; color: #666;">Загрузка слушателей...</p>
-                        </div>
-
-                        <!-- Активная сессия (Чат с человеком) -->
-                        <div id="conversationSection" class="hidden"
-                            style="height: 100%; display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px;">
-
-                            <div class="glass-panel"
-                                style="padding: 15px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <strong>💬 Разговор с:</strong> <span id="conversationPartner"
-                                        style="color: var(--accent);">...</span>
-                                </div>
-                                <div class="call-buttons">
-                                    <button class="btn btn-sm btn-primary" onclick="startAudioCall()"
-                                        title="Аудиозвонок">📞</button>
-                                    <button class="btn btn-sm btn-primary" onclick="startVideoCall()"
-                                        title="Видеозвонок">🎥</button>
-                                </div>
-                            </div>
-
-                            <div id="conversationMessages" class="chat-messages"
-                                style="flex: 1; min-height: 300px; max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
-                            </div>
-
-                            <div class="chat-controls" style="display: flex; gap: 10px;">
-                                <input type="text" id="conversationMessageInput" class="form-input"
-                                    placeholder="Сообщение..." style="flex: 1;">
-                                <button class="btn btn-icon btn-primary" onclick="sendConversationMessage()">
-                                    <i class="fas fa-envelope"></i>
-                                </button>
-                                <div class="voice-controls" style="display: inline-flex; gap: 5px;">
-                                    <button id="conversationRecordButton" class="btn btn-secondary"
-                                        onclick="startConversationAudio()" title="Голосовое сообщение">🎤</button>
-                                    <button id="conversationStopButton" class="btn btn-danger"
-                                        onclick="stopConversationAudio()" style="display: none;"
-                                        title="Остановить">⏹️</button>
-                                    <button id="conversationCancelButton" class="btn btn-secondary"
-                                        onclick="cancelConversationAudio()" style="display: none;"
-                                        title="Отмена">❌</button>
-                                </div>
-                                <button class="btn btn-secondary" onclick="closeConversation()">
-                                    Завершить
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div id="registerForm" class="hidden">
+                <input type="text" id="regUsername" placeholder="Имя пользователя">
+                <input type="email" id="regEmail" placeholder="Email">
+                <input type="password" id="regPassword" placeholder="Пароль">
+                <button class="btn btn-primary w-100" onclick="register()">Создать аккаунт</button>
             </div>
         </div>
     </div>
 
-    <!-- Подключаем JavaScript -->
+    <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
+    <div id="mainInterface" class="container hidden">
+        
+        <!-- Шапка -->
+        <div class="top-bar glass-panel">
+            <div class="logo">👂 Ushi</div>
+            <div id="userInfoPanel">
+                <button class="btn btn-secondary" onclick="logout()">Выход <i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Меню выбора -->
+        <div id="modeSelectionSection">
+            <div class="mode-cards">
+                <div class="glass-panel mode-card" onclick="switchToMode('ai')">
+                    <i class="fas fa-robot fa-3x"></i>
+                    <h2>Чат с AI</h2>
+                    <p>Умный собеседник, поддержка голоса</p>
+                </div>
+                <div class="glass-panel mode-card" onclick="switchToMode('live')">
+                    <i class="fas fa-users fa-3x"></i>
+                    <h2>Люди</h2>
+                    <p>Найди слушателя или стань им</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- СЕКЦИЯ AI -->
+        <div id="aiSection" class="chat-layout glass-panel hidden">
+            <!-- Шапка чата -->
+            <div class="chat-header">
+                <button class="btn-icon" onclick="showModeSelection()"><i class="fas fa-arrow-left"></i></button>
+                <h3>AI Companion</h3>
+                <!-- Кнопка настроек -->
+                <button class="btn-icon" onclick="toggleAiSettings(true)"><i class="fas fa-cog"></i></button>
+            </div>
+
+            <!-- Область сообщений -->
+            <div id="aiChatContainer" class="messages-area">
+                <div style="text-align:center; opacity:0.5; margin-top:50px;">
+                    Начните общение. Настройки доступны по кнопке ⚙️
+                </div>
+            </div>
+            <div id="typingIndicator" class="hidden" style="padding: 0 20px; font-size: 0.8rem; opacity: 0.7;">
+                AI печатает...
+            </div>
+
+            <!-- Ввод -->
+            <div class="input-area">
+                <button id="recordButton" class="btn-icon"><i class="fas fa-microphone"></i></button>
+                <input type="text" id="messageInput" placeholder="Напишите сообщение...">
+                <button class="btn-icon text-primary" onclick="testAIChat()"><i class="fas fa-paper-plane"></i></button>
+            </div>
+
+            <!-- МОДАЛЬНОЕ ОКНО НАСТРОЕК -->
+            <div id="aiSettingsModal" class="modal-overlay hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Настройки чата</h3>
+                        <span class="close-modal" onclick="toggleAiSettings(false)">&times;</span>
+                    </div>
+                    
+                    <label>Провайдер:</label>
+                    <select id="provider"></select>
+                    
+                    <label>Модель:</label>
+                    <select id="model"></select>
+                    
+                    <label>Характер бота:</label>
+                    <select id="psychotype">
+                        <option value="empath">Эмпат (Мягкий, понимающий)</option>
+                        <option value="rational">Рационалист (Логичный, четкий)</option>
+                        <option value="optimist">Оптимист (Веселый, вдохновляющий)</option>
+                    </select>
+
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="useStreaming" checked>
+                        <label for="useStreaming">Печатать текст постепенно (Stream)</label>
+                    </div>
+
+                    <button class="btn btn-primary w-100" style="margin-top: 20px;" onclick="toggleAiSettings(false)">Готово</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- СЕКЦИЯ LIVE -->
+        <div id="liveSection" class="container hidden">
+             <!-- Список слушателей -->
+             <div id="listenersPanel">
+                <div style="display:flex; justify-content:between; align-items:center; margin-bottom:20px;">
+                    <button class="btn-icon" onclick="showModeSelection()"><i class="fas fa-arrow-left"></i> Назад</button>
+                    <h2>Живое общение</h2>
+                    <button id="earToggleButton" class="btn btn-primary" onclick="toggleEarRegistration()">🎧 Стать слушателем</button>
+                </div>
+                
+                <div id="listenersListContainer" class="listeners-list"></div>
+            </div>
+
+            <!-- Чат с человеком -->
+            <div id="conversationSection" class="chat-layout glass-panel hidden">
+                <div class="chat-header">
+                    <button class="btn-icon" onclick="closeConversation()"><i class="fas fa-times"></i></button>
+                    <h3 id="conversationPartner">Собеседник</h3>
+                    <div>
+                        <button class="btn-icon" onclick="startAudioCall()"><i class="fas fa-phone"></i></button>
+                        <button class="btn-icon" onclick="startVideoCall()"><i class="fas fa-video"></i></button>
+                    </div>
+                </div>
+
+                <div id="conversationMessages" class="messages-area"></div>
+
+                <div class="input-area">
+                    <button id="conversationRecordButton" class="btn-icon" onclick="startConversationAudio()"><i class="fas fa-microphone"></i></button>
+                    <button id="conversationStopButton" class="btn-icon text-danger hidden" onclick="stopConversationAudio()"><i class="fas fa-stop"></i></button>
+                    
+                    <input type="text" id="conversationMessageInput" placeholder="Сообщение...">
+                    <button class="btn-icon text-primary" onclick="sendConversationMessage()"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- СКРИПТЫ -->
     <script type="module" src="js/utils.js"></script>
     <script type="module" src="js/ui.js"></script>
     <script type="module" src="js/auth.js"></script>
+    <script type="module" src="js/webrtc.js"></script>
     <script type="module" src="js/ai-chat.js"></script>
     <script type="module" src="js/live-listeners.js"></script>
     <script type="module" src="js/socket-client.js"></script>
-    <script src="js/app.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="js/app.js"></script>
 
-    <!-- WebRTC зависимости -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.2/RecordRTC.js"></script>
-
-    <!-- Подключите webrtc.js -->
-    <script type="module" src="js/webrtc.js"></script>
-    <script type="module" src="js/chat-enhancements.js"></script>`r`n
-    <script src="js/audio-transcription.js"></script>
-
-    <!-- Стили для звонков -->
-    <style>
-        .call-interface {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            z-index: 1000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .call-modal {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-        }
-
-        .video-container {
-            position: relative;
-            width: 640px;
-            height: 480px;
-        }
-
-        #remoteVideo {
-            width: 100%;
-            height: 100%;
-            background: #000;
-        }
-
-        #localVideo {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 160px;
-            height: 120px;
-            border: 2px solid white;
-            border-radius: 5px;
-        }
-
-        .call-controls {
-            margin-top: 20px;
-        }
-
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        .mode-card:hover {
-            transform: translateY(-5px);
-            background: rgba(255, 255, 255, 0.1);
-        }
-    </style>
 </body>
-
 </html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character Test</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .character-stage {
+            width: 400px;
+            height: 400px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        .character-img {
+            max-width: 80%;
+            max-height: 80%;
+            transition: transform 0.2s ease;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        select,
+        button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        select {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        select option {
+            background: #16213e;
+        }
+
+        button {
+            background: var(--primary, #4a90e2);
+            color: white;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #357abd;
+        }
+
+        button.active {
+            background: #e24a4a;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Character Prototype Test</h1>
+
+    <div class="character-stage">
+        <!-- Canvas will be injected here -->
+        <img id="character" src="assets/characters/owl_idle.png" style="display: none;">
+    </div>
+
+    <div class="controls">
+        <select id="characterSelect" onchange="changeCharacter()">
+            <option value="owl">Owl (Empath)</option>
+            <option value="badger">Badger (Optimist)</option>
+            <option value="fox">Fox (Rationalist)</option>
+        </select>
+
+        <button id="talkBtn" onclick="toggleTalking()">Test Lip-Sync 🎤</button>
+    </div>
+
+    <script>
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const stage = document.querySelector('.character-stage');
+
+        stage.appendChild(canvas);
+        canvas.className = 'character-img';
+
+        // State
+        let currentCharacter = 'owl';
+        let isBlinking = false;
+        let mouthOpenness = 0; // 0 to 1
+        let audioContext, analyser, dataArray;
+        let isListening = false;
+
+        // Assets cache
+        const assets = {
+            base: new Image(),
+            eyesOpen: new Image(),
+            eyesClosed: new Image(),
+            mouthClosed: new Image(),
+            mouthOpen: new Image()
+        };
+
+        // Load assets for character
+        function loadAssets(char) {
+            // Using placeholders for now
+            assets.base.src = `assets/characters/${char}_base.png`;
+            assets.eyesOpen.src = `assets/characters/${char}_eyes_open.png`;
+            assets.eyesClosed.src = `assets/characters/${char}_eyes_closed.png`;
+            assets.mouthClosed.src = `assets/characters/${char}_mouth_closed.png`;
+            assets.mouthOpen.src = `assets/characters/${char}_mouth_open.png`;
+
+            assets.base.onload = () => {
+                canvas.width = assets.base.width;
+                canvas.height = assets.base.height;
+            };
+        }
+
+        // Animation Loop
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw Base
+            if (assets.base.complete && assets.base.naturalWidth > 0) {
+                ctx.drawImage(assets.base, 0, 0);
+            }
+
+            // 2. Draw Eyes (Blinking logic)
+            const eyes = isBlinking ? assets.eyesClosed : assets.eyesOpen;
+            if (eyes.complete && eyes.naturalWidth > 0) {
+                ctx.drawImage(eyes, 0, 0);
+            }
+
+            // 3. Draw Mouth (Lip-sync logic)
+            const mouth = mouthOpenness > 0.2 ? assets.mouthOpen : assets.mouthClosed;
+            if (mouth.complete && mouth.naturalWidth > 0) {
+                ctx.drawImage(mouth, 0, 0);
+            }
+
+            // Remove background (Client-side transparency)
+            removeWhiteBackground();
+
+            requestAnimationFrame(animate);
+        }
+
+        function removeWhiteBackground() {
+            if (canvas.width === 0 || canvas.height === 0) return;
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) {
+                    data[i + 3] = 0;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        // Blinking Logic
+        function startBlinking() {
+            const blinkDuration = 150;
+            const minInterval = 2000;
+            const maxInterval = 5000;
+
+            function blink() {
+                isBlinking = true;
+                setTimeout(() => {
+                    isBlinking = false;
+                    const nextBlink = Math.random() * (maxInterval - minInterval) + minInterval;
+                    setTimeout(blink, nextBlink);
+                }, blinkDuration);
+            }
+            blink();
+        }
+
+        // Audio Analysis (Lip-sync)
+        async function startAudioListening() {
+            if (isListening) return;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                analyser.fftSize = 256;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                isListening = true;
+                analyzeVolume();
+
+                document.getElementById('talkBtn').textContent = 'Listening... 🎤';
+                document.getElementById('talkBtn').classList.add('active');
+
+            } catch (err) {
+                console.error('Microphone error:', err);
+                alert('Microphone access needed for lip-sync test');
+            }
+        }
+
+        function stopAudioListening() {
+            if (audioContext) {
+                audioContext.close();
+                isListening = false;
+                mouthOpenness = 0;
+                document.getElementById('talkBtn').textContent = 'Test Lip-Sync 🎤';
+                document.getElementById('talkBtn').classList.remove('active');
+            }
+        }
+
+        function analyzeVolume() {
+            if (!isListening) return;
+
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+
+            mouthOpenness = Math.max(0, (average - 10) / 50);
+            if (mouthOpenness > 1) mouthOpenness = 1;
+
+            requestAnimationFrame(analyzeVolume);
+        }
+
+        // UI Handlers
+        window.changeCharacter = function () {
+            currentCharacter = document.getElementById('characterSelect').value;
+            loadAssets(currentCharacter);
+        }
+
+        window.toggleTalking = function () {
+            if (isListening) {
+                stopAudioListening();
+            } else {
+                startAudioListening();
+            }
+        }
+
+        // Initialize
+        loadAssets('owl');
+        startBlinking();
+        animate();
+    </script>
+</body>
+
+</html>

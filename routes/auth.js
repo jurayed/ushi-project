@@ -1,27 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
+// Предполагается, что функции в models/users принимают (req, res), то есть работают как контроллеры
 const { registerUser, loginUser, getUserProfile, getUsers } = require('../models/users');
 
-// Health check endpoint
-router.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
-
-// Регистрация пользователя
+// 📝 Регистрация и Вход
 router.post('/register', registerUser);
-
-// Вход пользователя
 router.post('/login', loginUser);
 
-// Получить профиль пользователя
+// 👤 Профиль
 router.get('/profile', authenticateToken, getUserProfile);
 
-// Получить список пользователей (для админов)
+// 👥 Список пользователей (Админка)
 router.get('/users', authenticateToken, getUsers);
 
 module.exports = router;

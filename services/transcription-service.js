@@ -1,65 +1,47 @@
 // services/transcription-service.js
-// Using native Node.js modules (Node 18+)
-const fs = require('fs');
-const { Blob } = require('buffer');
+// Работает на Node 18+ (встроенный fetch и FormData)
 
-/**
- * Transcribe audio using OpenAI Whisper API
- * Supports 99 languages with automatic language detection
- * 
- * @param {Buffer} audioBuffer - Audio file buffer
- * @param {string} filename - Original filename (e.g., 'audio.webm')
- * @returns {Promise<{text: string, language: string}>} - Transcribed text and detected language
- */
-async function transcribeAudio(audioBuffer, filename = 'audio.webm') {
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-        throw new Error('OPENAI_API_KEY not configured');
+async function transcribeAudio(audioBuffer, filename = 'voice.webm') {
+    if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY не найден в .env файле');
     }
 
     try {
-        // Create form data with audio file
-        const formData = new FormData();
+        console.log(`🎙️ Начало транскрибации (${filename}, ${audioBuffer.length} байт)...`);
 
-        // Convert buffer to Blob for native FormData
+        const formData = new FormData();
+        // Важно: создаем Blob с правильным типом
         const blob = new Blob([audioBuffer], { type: 'audio/webm' });
         formData.append('file', blob, filename);
-
         formData.append('model', 'whisper-1');
-
-        console.log('🎙️ Sending audio to OpenAI Whisper for transcription...');
 
         const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                // Native fetch automatically sets Content-Type for FormData
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                // Content-Type устанавливается автоматически браузером/node fetch
             },
             body: formData
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            console.error('❌ Whisper API error:', error);
-            throw new Error(`Whisper API error: ${error.error?.message || response.statusText}`);
+            const errorData = await response.json().catch(() => ({}));
+            console.error('❌ Ошибка OpenAI Whisper:', JSON.stringify(errorData, null, 2));
+            throw new Error(`Whisper API Error: ${errorData.error?.message || response.statusText}`);
         }
 
         const result = await response.json();
-
-        console.log('✅ Transcription successful:', result.text.substring(0, 100) + '...');
-
+        console.log('✅ Транскрибация успешна:', result.text.substring(0, 50) + '...');
+        
         return {
             text: result.text,
             language: result.language || 'unknown'
         };
 
     } catch (error) {
-        console.error('❌ Transcription error:', error);
+        console.error('❌ Критическая ошибка транскрибации:', error.message);
         throw error;
     }
 }
 
-module.exports = {
-    transcribeAudio
-};
+module.exports = { transcribeAudio };

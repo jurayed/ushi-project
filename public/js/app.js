@@ -1,48 +1,36 @@
-// public/js/app.js - ТОЛЬКО ИНИЦИАЛИЗАЦИЯ
-console.log('🚀 app.js загружен');
+console.log('🚀 App Loaded');
 
-// Глобальные переменные
+// Глобальное состояние
 window.currentUser = null;
 window.currentToken = null;
 window.socket = null;
 window.isEar = false;
 window.currentConversationId = null;
 
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', function () {
-    console.log('✅ DOM загружен, приложение инициализировано');
+import { initializeSocket } from './socket-client.js';
+import { showMainInterface } from './ui.js';
 
-    // Проверяем сохраненный токен при загрузке
-    const savedToken = localStorage.getItem('ushi_token');
-    if (savedToken) {
-        window.currentToken = savedToken;
+document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('ushi_token');
+    if (token) {
+        window.currentToken = token;
         checkAuth();
     }
 });
 
-// Проверка аутентификации при загрузке
 async function checkAuth() {
     try {
-        const response = await fetch('/api/profile', {
-            headers: {
-                'Authorization': 'Bearer ' + window.currentToken
-            }
+        const res = await fetch('/api/profile', {
+            headers: { 'Authorization': 'Bearer ' + window.currentToken }
         });
-
-        if (response.ok) {
-            window.currentUser = await response.json();
-            window.showMainInterface();
-            // Initialize socket after successful auth - wait for module to load
-            setTimeout(() => {
-                if (window.initSocketConnection) {
-                    window.initSocketConnection();
-                }
-            }, 500);
+        if (res.ok) {
+            window.currentUser = await res.json();
+            showMainInterface();
+            initializeSocket();
         } else {
             localStorage.removeItem('ushi_token');
-            window.currentToken = null;
         }
-    } catch (error) {
-        console.error('Ошибка проверки авторизации:', error);
+    } catch (e) {
+        console.error(e);
     }
 }

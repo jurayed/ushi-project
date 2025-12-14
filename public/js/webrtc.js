@@ -456,3 +456,21 @@ async function recordAudioMessage() {
         }
     });
 }
+
+window.startAudioCall = function() {
+    if (window.currentPartnerId) {
+        window.webrtcManager.startCall(window.currentPartnerId, false);
+    } else {
+        showError('Нет активного собеседника');
+    }
+};
+
+window.startVideoCall = function() {
+    if (window.currentPartnerId) {
+        window.webrtcManager.startCall(window.currentPartnerId, true);
+    } else {
+        showError('Нет активного собеседника');
+    }
+};
+
+console.log('✅ WebRTC module loaded');

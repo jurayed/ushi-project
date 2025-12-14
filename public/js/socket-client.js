@@ -1,50 +1,24 @@
-// public/js/socket-client.js
-import { setupSocketListeners, loadEarsInfo } from './live-listeners.js';
+import { setupSocketListeners } from './live-listeners.js';
 import { setupWebRTCListeners } from './webrtc.js';
 
 export async function initializeSocket() {
-    if (!window.currentUser) {
-        console.log('⏳ Socket: Ожидаем аутентификацию пользователя');
-        return;
-    }
+    if (!window.currentUser) return;
 
-    console.log('🔌 Инициализация Socket.IO...');
+    console.log('🔌 Connecting socket...');
+    
+    // Подключение
+    window.socket = io(); // Auto-detects host
 
-    try {
-        window.socket = io();
-
-        window.socket.on('connect', () => {
-            console.log('✅ Socket.IO подключен');
-
-            window.socket.emit('user_online', {
-                userId: window.currentUser.id,
-                userData: {
-                    username: window.currentUser.username,
-                    email: window.currentUser.email
-                }
-            });
-
-            // Загружаем информацию о слушателях после подключения
-            loadEarsInfo();
-            setupWebRTCListeners();
+    window.socket.on('connect', () => {
+        console.log('✅ Connected');
+        // Сообщаем серверу кто мы
+        window.socket.emit('user_online', {
+            userId: window.currentUser.id,
+            userData: { username: window.currentUser.username }
         });
-
-        window.socket.on('disconnect', () => {
-            console.log('🔌 Socket.IO отключен');
-        });
-
-        window.socket.on('error', (error) => {
-            console.error('❌ Socket error:', error);
-        });
-
+        
+        // Подключаем обработчики
         setupSocketListeners();
-
-        console.log('✅ Socket.IO инициализирован');
-
-    } catch (error) {
-        console.error('❌ Ошибка инициализации Socket.IO:', error);
-    }
+        setupWebRTCListeners();
+    });
 }
-
-// Expose globally for non-module scripts like app.js
-window.initSocketConnection = initializeSocket;

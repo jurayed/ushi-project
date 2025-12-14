@@ -1,178 +1,159 @@
-// AI Providers Configuration
+// services/ai-providers.js
+// В Node.js 18+ fetch встроен, импорт не нужен
+
 const AI_PROVIDERS = {
   deepseek: {
     name: 'DeepSeek',
     enabled: !!process.env.DEEPSEEK_API_KEY,
     models: {
-      'deepseek-chat': { name: 'DeepSeek Chat', context: 32_768, price: '$0.14/1M input' },
-      'deepseek-coder': { name: 'DeepSeek Coder', context: 16_384, price: '$0.14/1M input' }
+      'deepseek-chat': { name: 'DeepSeek Chat (V3)', context: 32000, price: 'Дешево' },
+      'deepseek-coder': { name: 'DeepSeek Coder', context: 16000, price: 'Кодинг' }
     },
     defaultModel: 'deepseek-chat',
-    call: callDeepSeek
+    chat: callDeepSeek,
+    stream: streamDeepSeek
   },
   openai: {
     name: 'OpenAI',
     enabled: !!process.env.OPENAI_API_KEY,
     models: {
-      'gpt-4-turbo-preview': { name: 'GPT-4 Turbo', context: 128_000, price: '$10/1M input' },
-      'gpt-4': { name: 'GPT-4', context: 8_192, price: '$30/1M input' },
-      'gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', context: 16_385, price: '$1.5/1M input' }
+      'gpt-4o': { name: 'GPT-4o (Omni)', context: 128000, price: 'Самая умная' },
+      'gpt-4-turbo-preview': { name: 'GPT-4 Turbo', context: 128000, price: 'Быстрая' },
+      'gpt-4': { name: 'GPT-4 (Classic)', context: 8192, price: 'Дорогая' },
+      'gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', context: 16000, price: 'Быстрая/Дешевая' },
+      'gpt-3.5-turbo-16k': { name: 'GPT-3.5 Turbo 16k', context: 16000, price: 'Большой контекст' }
     },
-    defaultModel: 'gpt-4-turbo-preview',
-    call: callOpenAI
+    defaultModel: 'gpt-4o',
+    chat: callOpenAI,
+    stream: streamOpenAI
   },
   gemini: {
     name: 'Google Gemini',
     enabled: !!process.env.GOOGLE_API_KEY,
     models: {
-      'gemini-2.0-flash': { 
-        name: 'Gemini 2.0 Flash (рекомендуется)', 
-        context: 1_000_000, 
-        price: 'Бесплатно (быстрая)' 
-      },
-      'gemini-2.0-flash-001': { 
-        name: 'Gemini 2.0 Flash 001', 
-        context: 1_000_000, 
-        price: 'Бесплатно' 
-      },
-      'gemini-2.5-flash': { 
-        name: 'Gemini 2.5 Flash (новая)', 
-        context: 1_000_000, 
-        price: 'Бесплатно' 
-      },
-      'gemini-2.0-flash-lite': { 
-        name: 'Gemini 2.0 Flash Lite', 
-        context: 1_000_000, 
-        price: 'Бесплатно (облегченная)' 
-      }
+      'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', context: 1000000, price: 'Мощная' },
+      'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', context: 1000000, price: 'Быстрая' },
+      'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', context: 32000, price: 'Стабильная' },
+      'gemini-2.0-flash': { name: 'Gemini 2.0 Flash (Exp)', context: 1000000, price: 'Экспериментальная' }
     },
-    defaultModel: 'gemini-2.0-flash',
-    call: callGemini
+    defaultModel: 'gemini-1.5-flash',
+    chat: callGemini,
+    stream: streamGemini
   }
 };
 
-// DeepSeek API с поддержкой модели
-async function callDeepSeek(systemPrompt, userMessage, model = 'deepseek-chat') {
-  try {
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage }
-        ],
-        max_tokens: 500,
-        temperature: 0.7
-      })
-    });
+// ==================== DEEPSEEK ====================
+async function callDeepSeek(systemPrompt, messages, model) {
+  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      temperature: 0.7
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'DeepSeek API Error');
+  return data.choices[0].message.content;
+}
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ DeepSeek API error ${response.status}:`, errorText);
-      throw new Error(`DeepSeek API error: ${response.status}`);
-    }
+async function streamDeepSeek(systemPrompt, messages, model, res) {
+  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      stream: true
+    })
+  });
+  await pipeSSEStream(response, res);
+}
 
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch (error) {
-    console.error('❌ DeepSeek API call failed:', error);
-    throw error;
+// ==================== OPENAI ====================
+async function callOpenAI(systemPrompt, messages, model) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'OpenAI API Error');
+  return data.choices[0].message.content;
+}
+
+async function streamOpenAI(systemPrompt, messages, model, res) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      stream: true
+    })
+  });
+  await pipeSSEStream(response, res);
+}
+
+// ==================== GEMINI ====================
+async function callGemini(systemPrompt, messages, model) {
+  const conversation = messages.map(m => `${m.role === 'user' ? 'User' : 'Model'}: ${m.content}`).join('\n');
+  const fullPrompt = `${systemPrompt}\n\nHistory:\n${conversation}\n\nModel response:`;
+
+  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${process.env.GOOGLE_API_KEY}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
+  });
+  
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Gemini API Error');
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+async function streamGemini(systemPrompt, messages, model, res) {
+  const text = await callGemini(systemPrompt, messages, model);
+  const words = text.split(' ');
+  for (const word of words) {
+    res.write(word + ' ');
+    await new Promise(r => setTimeout(r, 50));
   }
 }
 
-// OpenAI API с поддержкой модели
-async function callOpenAI(systemPrompt, userMessage, model = 'gpt-4-turbo-preview') {
+// ==================== HELPER: SSE PIPING ====================
+async function pipeSSEStream(upstreamResponse, res) {
+  if (!upstreamResponse.body) return;
+  
+  const reader = upstreamResponse.body.getReader();
+  const decoder = new TextDecoder();
+
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage }
-        ],
-        max_tokens: 500,
-        temperature: 0.7
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ OpenAI API error ${response.status}:`, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch (error) {
-    console.error('❌ OpenAI API call failed:', error);
-    throw error;
-  }
-}
-
-// Google Gemini API с поддержкой модели
-async function callGemini(systemPrompt, userMessage, model = 'gemini-2.0-flash') {
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${process.env.GOOGLE_API_KEY}`;
-    
-    console.log(`🔍 Gemini API Call: ${model}`);
-    
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            {
-              text: `${systemPrompt}\n\nUser: ${userMessage}\n\nAssistant:`
-            }
-          ]
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            const content = data.choices[0]?.delta?.content;
+            if (content) res.write(content);
+          } catch (e) { /* ignore parse errors */ }
         }
-      ],
-      generationConfig: {
-        maxOutputTokens: 500,
-        temperature: 0.7
       }
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Gemini API error ${response.status}:`, errorText);
-      throw new Error(`Gemini API error: ${response.status}`);
     }
-
-    const data = await response.json();
-    
-    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0]) {
-      return data.candidates[0].content.parts[0].text;
-    } else {
-      throw new Error('Invalid response format from Gemini API');
-    }
-
-  } catch (error) {
-    console.error('❌ Gemini API call failed:', error);
-    throw error;
+  } catch (err) {
+    console.error('Stream Error:', err);
+    res.write(`\n[Error: ${err.message}]`);
   }
 }
 
-module.exports = {
-  AI_PROVIDERS,
-  callDeepSeek,
-  callOpenAI,
-  callGemini
-};
+module.exports = { AI_PROVIDERS };

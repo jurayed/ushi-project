@@ -1,422 +1,260 @@
-// public/js/live-listeners.js
 import { showError, showSuccess } from './ui.js';
 
-// Глобальные переменные для записи аудио
+// Глобальные переменные
 let conversationMediaRecorder = null;
 let conversationAudioChunks = [];
-let listenersRefreshInterval = null;
 
-// Глобальные функции системы слушателей
+// ==================== LISTENER MANAGEMENT ====================
+
 window.toggleEarRegistration = function () {
-    if (!window.currentUser || !window.socket) {
-        showError('Сначала войдите в систему');
-        return;
-    }
+    if (!window.currentUser || !window.socket) return showError('Нет соединения');
 
-    console.log('🔄 Toggling ear registration, current isEar:', window.isEar);
-
-    try {
-        if (window.isEar) {
-            console.log('➖ Unregistering as listener...');
-            window.socket.emit('unregister_listener', {
-                userId: window.currentUser.id
-            });
-        } else {
-            console.log('➕ Registering as listener...');
-            window.socket.emit('register_listener', {
-                userId: window.currentUser.id,
-                userData: {
-                    username: window.currentUser.username,
-                    email: window.currentUser.email,
-                    psychotype: 'empath'
-                }
-            });
-        }
-    } catch (error) {
-        console.error('❌ Toggle error:', error);
-        console.log('🛑 Listeners auto-refresh stopped');
+    if (window.isEar) {
+        window.socket.emit('unregister_listener', { userId: window.currentUser.id });
+    } else {
+        window.socket.emit('register_listener', {
+            userId: window.currentUser.id,
+            userData: {
+                username: window.currentUser.username,
+                email: window.currentUser.email
+            }
+        });
     }
 };
 
-// Загрузить список доступных слушателей
 window.loadAvailableListeners = async function () {
     try {
         const response = await fetch('/api/ears/list', {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + window.currentToken
-            }
+            headers: { 'Authorization': 'Bearer ' + window.currentToken }
         });
         const data = await response.json();
-
-        if (response.ok) {
-            displayListenersList(data.listeners);
-        } else {
-            // Не показываем ошибку каждый раз при авто-обновлении, только в консоль
-            console.warn('Ошибка загрузки слушателей:', data.error);
-        }
-    } catch (error) {
-        console.warn('Ошибка загрузки слушателей:', error.message);
+        renderListeners(data.listeners || []);
+    } catch (e) {
+        console.error(e);
     }
 };
 
-// Отобразить список слушателей
-function displayListenersList(listeners) {
+function renderListeners(list) {
     const container = document.getElementById('listenersListContainer');
     if (!container) return;
 
-    if (listeners.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: #666;">Нет доступных слушателей</p>';
+    if (list.length === 0) {
+        container.innerHTML = '<p class="text-center text-muted">Нет свободных слушателей</p>';
         return;
     }
 
-    // Сохраняем текущий HTML чтобы проверить изменилось ли что-то (простая оптимизация)
-    // Но для простоты пока просто перерисовываем
-
-    container.innerHTML = listeners.map(listener => `
+    container.innerHTML = list.map(l => `
         <div class="listener-card glass-panel">
             <div class="listener-info">
-                <strong>👤 ${listener.username}</strong>
-                <div style="font-size: 14px; color: var(--text-muted);">Онлайн • ${listener.psychotype}</div>
+                <strong>👤 ${l.username}</strong>
+                <small>Онлайн</small>
             </div>
-            <button class="btn btn-primary" onclick="startConversationWith(${listener.id}, '${listener.username}')">
+            <button class="btn btn-primary" onclick="startConversationWith(${l.id}, '${l.username}')">
                 Начать чат
             </button>
         </div>
     `).join('');
 }
 
-// Начать сессию с выбранным слушателем
+// ==================== CONVERSATION LOGIC ====================
+
 window.startConversationWith = async function (listenerId, listenerName) {
     try {
-        const response = await fetch('/api/conversations/create', {
+        const res = await fetch('/api/conversations/create', {
             method: 'POST',
-            headers: {
+            headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + window.currentToken
+                'Authorization': 'Bearer ' + window.currentToken 
             },
             body: JSON.stringify({ listenerId })
         });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            window.currentConversationId = data.conversation_id;
-            window.currentPartnerName = listenerName;
-
-            // Показать интерфейс чата
-            document.getElementById('conversationSection').classList.remove('hidden');
-            const partnerSpan = document.getElementById('conversationPartner');
-            if (partnerSpan) partnerSpan.textContent = listenerName;
-
-            showSuccess(`Сессия начата с ${listenerName}`);
-            loadConversationMessages();
+        const data = await res.json();
+        
+        if (res.ok) {
+            openConversationUI(data.conversation_id, listenerName, listenerId); // ID партнера важен для WebRTC
         } else {
-            showError('Ошибка: ' + data.error);
+            showError(data.error);
         }
-    } catch (error) {
-        showError('Ошибка: ' + error.message);
+    } catch (e) {
+        showError(e.message);
     }
 };
 
-// --- Функции записи аудио ---
+function openConversationUI(convId, partnerName, partnerId) {
+    window.currentConversationId = convId;
+    window.currentPartnerId = partnerId; // Для WebRTC звонков
+    
+    document.getElementById('conversationSection').classList.remove('hidden');
+    const title = document.getElementById('conversationPartner');
+    if (title) title.textContent = partnerName;
+    
+    loadMessages();
+}
 
-window.startConversationAudio = async function () {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showError('Ваш браузер не поддерживает запись аудио');
+window.closeConversation = async function () {
+    if (!window.currentConversationId) return;
+    await fetch(`/api/conversations/${window.currentConversationId}/close`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + window.currentToken }
+    });
+    window.currentConversationId = null;
+    window.currentPartnerId = null;
+    document.getElementById('conversationSection').classList.add('hidden');
+    showSuccess('Чат завершен');
+};
+
+// ==================== MESSAGING & AUDIO ====================
+
+window.sendConversationMessage = async function (isAudio = false) {
+    const input = document.getElementById('conversationMessageInput');
+    let text = input.value.trim();
+    let mediaUrl = null;
+    let mediaType = null;
+
+    if (isAudio && conversationAudioChunks.length > 0) {
+        // Upload audio
+        const blob = new Blob(conversationAudioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', blob, 'voice.webm');
+        
+        try {
+            const upRes = await fetch('/api/upload/audio', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + window.currentToken },
+                body: formData
+            });
+            const upData = await upRes.json();
+            mediaUrl = upData.url;
+            mediaType = 'audio/webm';
+            text = '[Голосовое сообщение]';
+        } catch (e) {
+            return showError('Ошибка загрузки аудио');
+        }
+        conversationAudioChunks = [];
+    } else if (!text) {
         return;
     }
 
     try {
+        const res = await fetch(`/api/conversations/${window.currentConversationId}/message`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + window.currentToken 
+            },
+            body: JSON.stringify({ message: text, media_url: mediaUrl, media_type: mediaType })
+        });
+        
+        if (res.ok) {
+            input.value = '';
+            const msgData = await res.json();
+            appendConvMessage(msgData.message, true);
+        }
+    } catch (e) {
+        showError(e.message);
+    }
+};
+
+// Recording UI Controls
+window.startConversationAudio = async function() {
+    try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         conversationMediaRecorder = new MediaRecorder(stream);
         conversationAudioChunks = [];
-
-        conversationMediaRecorder.ondataavailable = (event) => {
-            conversationAudioChunks.push(event.data);
-        };
-
-        conversationMediaRecorder.onstop = () => {
-            // Ничего не делаем здесь, отправка будет в sendConversationMessage
-        };
-
+        conversationMediaRecorder.ondataavailable = e => conversationAudioChunks.push(e.data);
         conversationMediaRecorder.start();
 
-        // Обновляем UI
-        document.getElementById('conversationRecordButton').style.display = 'none';
-        document.getElementById('conversationStopButton').style.display = 'inline-block';
-        document.getElementById('conversationCancelButton').style.display = 'inline-block';
-        document.getElementById('conversationMessageInput').placeholder = 'Запись идет...';
-        document.getElementById('conversationMessageInput').disabled = true;
-
-    } catch (error) {
-        console.error('Ошибка доступа к микрофону:', error);
-        showError('Не удалось получить доступ к микрофону');
-    }
+        // UI Toggle
+        toggleRecUI(true);
+    } catch (e) { showError('Микрофон недоступен'); }
 };
 
-window.stopConversationAudio = function () {
-    if (conversationMediaRecorder && conversationMediaRecorder.state !== 'inactive') {
-        conversationMediaRecorder.stop();
-        conversationMediaRecorder.stream.getTracks().forEach(track => track.stop());
-
-        // Обновляем UI
-        document.getElementById('conversationRecordButton').style.display = 'inline-block';
-        document.getElementById('conversationStopButton').style.display = 'none';
-        document.getElementById('conversationCancelButton').style.display = 'none';
-        document.getElementById('conversationMessageInput').placeholder = 'Голосовое сообщение записано. Нажмите отправить.';
-        document.getElementById('conversationMessageInput').disabled = false;
-
-        setTimeout(() => {
-            sendConversationMessage(true); // true флаг что это аудио
-        }, 500);
-    }
-};
-
-window.cancelConversationAudio = function () {
+window.stopConversationAudio = function() {
     if (conversationMediaRecorder) {
+        conversationMediaRecorder.onstop = () => window.sendConversationMessage(true);
         conversationMediaRecorder.stop();
-        conversationMediaRecorder.stream.getTracks().forEach(track => track.stop());
+        toggleRecUI(false);
     }
+};
+
+window.cancelConversationAudio = function() {
+    if (conversationMediaRecorder) conversationMediaRecorder.stop();
     conversationAudioChunks = [];
-    conversationMediaRecorder = null;
-
-    // Сброс UI
-    document.getElementById('conversationRecordButton').style.display = 'inline-block';
-    document.getElementById('conversationStopButton').style.display = 'none';
-    document.getElementById('conversationCancelButton').style.display = 'none';
-    document.getElementById('conversationMessageInput').placeholder = 'Сообщение...';
-    document.getElementById('conversationMessageInput').disabled = false;
+    toggleRecUI(false);
 };
 
-// --- Конец функций записи ---
+function toggleRecUI(isRecording) {
+    document.getElementById('conversationRecordButton').style.display = isRecording ? 'none' : 'inline-block';
+    document.getElementById('conversationStopButton').style.display = isRecording ? 'inline-block' : 'none';
+    document.getElementById('conversationCancelButton').style.display = isRecording ? 'inline-block' : 'none';
+}
 
-window.sendConversationMessage = async function (isAudio = false) {
-    const messageInput = document.getElementById('conversationMessageInput');
-    let message = messageInput?.value.trim();
-    let mediaUrl = null;
-    let mediaType = null;
+// ==================== HELPERS ====================
 
-    // Если это аудио сообщение
-    if (isAudio && conversationAudioChunks.length > 0) {
-        const audioBlob = new Blob(conversationAudioChunks, { type: 'audio/webm' });
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'voice_message.webm');
-
-        try {
-            // Загружаем файл
-            const uploadResponse = await fetch('/api/upload/audio', {
-                method: 'POST',
-                headers: {
-                    'Authorization': 'Bearer ' + window.currentToken
-                },
-                body: formData
-            });
-
-            const uploadResult = await uploadResponse.json();
-            if (uploadResponse.ok) {
-                mediaUrl = uploadResult.url;
-                mediaType = 'audio/webm';
-                message = '[Голосовое сообщение]'; // Текст заглушка
-            } else {
-                showError('Ошибка загрузки аудио: ' + uploadResult.error);
-                return;
-            }
-        } catch (error) {
-            showError('Ошибка загрузки: ' + error.message);
-            return;
-        }
-
-        // Очищаем чанки после успешной загрузки
-        conversationAudioChunks = [];
-        conversationMediaRecorder = null;
-
-        // Возвращаем UI в исходное состояние
-        document.getElementById('conversationMessageInput').placeholder = 'Сообщение...';
-    } else {
-        // Обычное текстовое сообщение
-        if (!message) return;
-    }
-
-    try {
-        const response = await fetch(`/api/conversations/${window.currentConversationId}/message`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + window.currentToken
-            },
-            body: JSON.stringify({
-                message,
-                media_url: mediaUrl,
-                media_type: mediaType
-            })
-        });
-
-        const result = await response.json();
-
-        if (response.ok) {
-            messageInput.value = '';
-            // Отображаем сообщение сразу
-            appendMessage({
-                sender_id: window.currentUser.id,
-                message_text: message,
-                media_url: mediaUrl,
-                media_type: mediaType,
-                sent_at: new Date().toISOString()
-            }, true);
-        } else {
-            showError('Ошибка отправки сообщения');
-        }
-    } catch (error) {
-        showError('Ошибка: ' + error.message);
-    }
-};
-
-window.closeConversation = async function () {
-    try {
-        const response = await fetch(`/api/conversations/${window.currentConversationId}/close`, {
-            method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + window.currentToken
-            }
-        });
-        if (response.ok) {
-            window.currentConversationId = null;
-            document.getElementById('conversationSection').classList.add('hidden');
-            showSuccess('Сессия завершена');
-        }
-    } catch (error) {
-        showError('Ошибка: ' + error.message);
-    }
-};
-
-// Вспомогательные функции для чата
-function appendMessage(message, isOwn) {
+async function loadMessages() {
+    const res = await fetch(`/api/conversations/${window.currentConversationId}/messages`, {
+        headers: { 'Authorization': 'Bearer ' + window.currentToken }
+    });
+    const msgs = await res.json();
     const container = document.getElementById('conversationMessages');
-    if (!container) return;
+    container.innerHTML = '';
+    msgs.forEach(m => appendConvMessage(m, m.sender_id === window.currentUser.id));
+}
 
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${isOwn ? 'user' : 'ai'}`;
-
-    // Текст сообщения
-    const textDiv = document.createElement('div');
-    textDiv.textContent = message.message_text;
-    msgDiv.appendChild(textDiv);
-
-    // Если есть медиа (аудио)
-    if (message.media_url && (message.media_type === 'audio/webm' || message.media_type === 'audio/mp3' || message.media_type === 'audio/wav')) {
-        const audioPlayer = document.createElement('audio');
-        audioPlayer.controls = true;
-        audioPlayer.src = message.media_url;
-        audioPlayer.style.marginTop = '5px';
-        audioPlayer.style.width = '100%';
-        msgDiv.appendChild(audioPlayer);
+export function appendConvMessage(msg, isOwn) {
+    const container = document.getElementById('conversationMessages');
+    const div = document.createElement('div');
+    div.className = `message ${isOwn ? 'user' : 'ai'}`; // 'ai' class is used for 'other' here in CSS
+    
+    let content = `<div>${msg.message_text}</div>`;
+    if (msg.media_url) {
+        content += `<audio controls src="${msg.media_url}" style="width:100%; margin-top:5px;"></audio>`;
     }
-
-    // Время
-    const timeDiv = document.createElement('div');
-    timeDiv.className = 'message-time';
-    timeDiv.style.fontSize = '0.7em';
-    timeDiv.style.opacity = '0.7';
-    timeDiv.style.marginTop = '4px';
-    timeDiv.style.textAlign = 'right';
-
-    const date = new Date(message.sent_at || Date.now());
-    timeDiv.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    msgDiv.appendChild(timeDiv);
-
-    container.appendChild(msgDiv);
+    div.innerHTML = content;
+    container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
 
-async function loadConversationMessages() {
-    if (!window.currentConversationId) return;
-
-    const container = document.getElementById('conversationMessages');
-    if (container) container.innerHTML = '';
-
-    try {
-        const response = await fetch(`/api/conversations/${window.currentConversationId}/messages`, {
-            headers: { 'Authorization': 'Bearer ' + window.currentToken }
-        });
-        const messages = await response.json();
-        if (response.ok && Array.isArray(messages)) {
-            messages.forEach(msg => {
-                appendMessage(msg, msg.sender_id === window.currentUser.id);
-            });
-        }
-    } catch (error) {
-        console.error('Error loading messages:', error);
-    }
-}
-
-// Внутренние функции
-export async function loadEarsInfo() {
-    if (!window.currentToken) return;
-
-    try {
-        const response = await fetch('/api/ears/available', {
-            headers: {
-                'Authorization': 'Bearer ' + window.currentToken
-            }
-        });
-        const data = await response.json();
-        if (response.ok) {
-            const earsInfo = document.getElementById('earsInfo');
-            if (earsInfo) {
-                earsInfo.innerHTML = `<div class="ear-status">Доступно слушателей: ${data.available_ears}</div>`;
-            }
-        }
-    } catch (error) {
-        console.error('Ошибка загрузки информации о слушателях:', error);
-    }
-}
-
-// Socket event handlers для слушателей
+// Экспорт для сокетов
 export function setupSocketListeners() {
     if (!window.socket) return;
 
-    window.socket.on('listener_registered', (data) => {
+    window.socket.on('listener_registered', () => {
         window.isEar = true;
-        const button = document.getElementById('earToggleButton');
-        if (button) button.textContent = '🎧 Перестать быть слушателем';
-        showSuccess('Вы теперь слушатель!');
+        updateEarBtn('🎧 Перестать быть слушателем');
+        showSuccess('Вы в эфире!');
     });
 
-    window.socket.on('listener_unregistered', (data) => {
-        console.log('✅ Listener unregistered:', data);
+    window.socket.on('listener_unregistered', () => {
         window.isEar = false;
-        const button = document.getElementById('earToggleButton');
-        if (button) button.textContent = '🎧 Стать слушателем';
-        showSuccess('Вы больше не слушатель');
+        updateEarBtn('🎧 Стать слушателем');
+        showSuccess('Вы скрыты');
     });
 
-    // Обработчик входящего запроса на сессию (для слушателя)
     window.socket.on('new_conversation_request', (data) => {
-        console.log('📩 New conversation request:', data);
-
-        window.currentConversationId = data.conversation_id;
-        window.currentPartnerName = data.requester.username;
-
-        // Показать уведомление
-        showSuccess(`Новый запрос от ${data.requester.username}`);
-
-        // Открыть интерфейс чата
-        document.getElementById('conversationSection').classList.remove('hidden');
-        const partnerSpan = document.getElementById('conversationPartner');
-        if (partnerSpan) partnerSpan.textContent = data.requester.username;
-
-        loadConversationMessages();
+        showSuccess(`Запрос от ${data.requester.username}`);
+        openConversationUI(data.conversation_id, data.requester.username, data.requester.id);
     });
 
-    // Обработка входящих сообщений
-    window.socket.on('new_message', (message) => {
-        console.log('📩 New message received:', message);
-        if (window.currentConversationId && message.conversation_id == window.currentConversationId) {
-            appendMessage(message, false);
-        } else {
-            // Можно добавить уведомление, если сообщение из другой (или новой) беседы
-            showSuccess('Новое сообщение от собеседника');
+    window.socket.on('new_message', (msg) => {
+        if (window.currentConversationId == msg.conversation_id) {
+            appendConvMessage(msg, false);
         }
     });
 }
+
+function updateEarBtn(text) {
+    const btn = document.getElementById('earToggleButton');
+    if (btn) btn.textContent = text;
+}
+
+// Делаем функции доступными для кнопок HTML
+window.toggleEarRegistration = toggleEarRegistration;
+window.startConversationWith = startConversationWith;
+window.closeConversation = closeConversation;
+window.sendConversationMessage = sendConversationMessage;
+window.startConversationAudio = startConversationAudio;
+window.stopConversationAudio = stopConversationAudio;
+window.cancelConversationAudio = cancelConversationAudio;
+
+console.log('✅ Live Listeners module loaded');
