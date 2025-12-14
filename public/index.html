@@ -103,7 +103,13 @@
 			</div>
             <!-- Ввод -->
             <div class="input-area">
-                <button id="recordButton" class="btn-icon"><i class="fas fa-microphone"></i></button>
+				<button id="recordButton" class="btn-icon" 
+					onmousedown="startAudioMessage()" 
+					onmouseup="stopAudioMessage()" 
+					ontouchstart="startAudioMessage()" 
+					ontouchend="stopAudioMessage()">
+					<i class="fas fa-microphone"></i>
+				</button>				
                 <input type="text" id="messageInput" placeholder="Напишите сообщение...">
                 <button class="btn-icon text-primary" onclick="testAIChat()"><i class="fas fa-paper-plane"></i></button>
             </div>
@@ -128,7 +134,8 @@
                         <option value="rational">Рационалист (Логичный, четкий)</option>
                         <option value="optimist">Оптимист (Веселый, вдохновляющий)</option>
                     </select>
-
+					<label style="margin-top: 15px;">Системная роль (Промпт):</label>
+					<textarea id="systemPrompt" rows="5" style="width: 100%; margin-bottom: 10px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-family: sans-serif;"></textarea>	
                     <div class="checkbox-wrapper">
                         <input type="checkbox" id="useStreaming" checked>
                         <label for="useStreaming">Печатать текст постепенно (Stream)</label>

@@ -1,7 +1,9 @@
 // services/socket-service.js
 const RedisService = require('./redis');
-// Подключаем модели, чтобы не писать SQL тут (разделение ответственности)
 const { unregisterAsEar } = require('../models/conversations'); 
+
+// 👇 1. ИМПОРТИРУЕМ НОВЫЙ СЕРВИС
+const StreamService = require('./ai-stream'); 
 
 class SocketService {
     constructor() {
@@ -20,21 +22,21 @@ class SocketService {
     }
 
     handleConnection(socket) {
-        // 1. Вход пользователя (Я онлайн)
+        // 👇 2. ПОДКЛЮЧАЕМ ОБРАБОТЧИК ГОЛОСА ЗДЕСЬ
+        StreamService.handleStreamConnection(socket); 
+
+        // 1. Вход пользователя
         socket.on('user_online', async ({ userId, userData }) => {
             if (!userId) return;
-            
-            socket.userId = userId; // Привязываем ID к сокету
+            socket.userId = userId; 
             await this.redis.setUserOnline(userId, socket.id, userData);
-            
             console.log(`🟢 User ${userId} connected`);
             this.io.emit('user_status_changed', { userId, status: 'online' });
         });
 
-        // 2. Регистрация слушателя (Только Redis часть, база уже обновлена через API)
+        // 2. Регистрация слушателя
         socket.on('register_listener', async ({ userId, userData }) => {
             if (!userId) return;
-            // Просто обновляем статус в Redis
             await this.redis.addActiveListener(userId, {
                 ...userData,
                 socketId: socket.id,
@@ -53,31 +55,23 @@ class SocketService {
         // 4. WebRTC звонки
         this.setupWebRTC(socket);
 
-        // 5. 🔥 САМОЕ ВАЖНОЕ: Отключение (Disconnect)
+        // 5. Отключение
         socket.on('disconnect', async () => {
             if (socket.userId) {
                 console.log(`🔴 User ${socket.userId} disconnected`);
-                
-                // Убираем из онлайна
                 await this.redis.setUserOffline(socket.userId);
-                
-                // Убираем из активных слушателей (в Redis), чтобы его не предлагало другим
-                // Примечание: В БД ears мы его НЕ удаляем, он просто становится "оффлайн" в редисе
                 await this.redis.removeActiveListener(socket.userId);
-                
                 this.io.emit('user_status_changed', { userId: socket.userId, status: 'offline' });
                 this.broadcastListeners();
             }
         });
     }
 
-    // Вспомогательная: обновить списки у всех
     async broadcastListeners() {
         const list = await this.redis.getAvailableListeners();
         this.io.emit('listeners_updated', list);
     }
 
-    // WebRTC обработчики
     setupWebRTC(socket) {
         const forward = (event, targetKey) => {
             socket.on(event, (data) => {
@@ -85,7 +79,6 @@ class SocketService {
                 this.emitToUser(targetId, event, { ...data, fromUserId: socket.userId });
             });
         };
-
         forward('call_user', 'toUserId');
         forward('answer_call', 'toUserId');
         forward('ice_candidate', 'toUserId');
@@ -93,7 +86,6 @@ class SocketService {
         forward('end_call', 'toUserId');
     }
 
-    // Отправка конкретному юзеру
     async emitToUser(userId, event, data) {
         const socketId = await this.redis.getUserSocket(userId);
         if (socketId) {
