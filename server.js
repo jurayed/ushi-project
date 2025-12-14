@@ -11,6 +11,7 @@ const RedisService = require('./services/redis');
 const SocketService = require('./services/socket-service');
 const { initializeDatabase, pool } = require('./models/database'); // pool нужен здесь пока мы не перенесли профиль
 const { AI_PROVIDERS } = require('./services/ai-providers');
+const { syncModelsFromAPI } = require('./services/model-sync'); // 👈 ИМПОРТ
 
 // Создание приложения
 const app = express();
@@ -110,10 +111,14 @@ async function startServer() {
     const dbInitialized = await initializeDatabase();
     if (!dbInitialized) throw new Error('DB Init Failed');
 
-    // 2. WebSocket
+	// 2. 🔥 СИНХРОНИЗАЦИЯ МОДЕЛЕЙ (ОНЛАЙН)
+    // Ждем выполнения, чтобы при старте настройки уже были полными
+    await syncModelsFromAPI();
+	
+    // 3. WebSocket
     SocketService.initialize(server);
 
-    // 3. Запуск слушателя
+    // 4. Запуск слушателя
     server.listen(port, '0.0.0.0', () => {
       console.log('\n✅ СИСТЕМА ЗАПУЩЕНА УСПЕШНО');
       console.log(`📡 URL: http://localhost:${port}`);

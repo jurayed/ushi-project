@@ -4,11 +4,10 @@ const { AI_PROVIDERS } = require('./ai-providers');
 const { PSYCHOTYPES } = require('../config/constants');
 const { generateSpeech } = require('./tts-service');
 
-// === НАСТРОЙКИ ПАМЯТИ ===
+// Настройки памяти
 const MAX_HISTORY_MESSAGES = 60; 
-const MAX_HISTORY_CHARS = 30000; // ~10k токенов
+const MAX_HISTORY_CHARS = 30000; 
 
-// Получаем имя пользователя для контекста
 async function getUserName(userId) {
     try {
         const res = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
@@ -28,7 +27,6 @@ async function fetchSmartHistory(userId) {
       content: msg.message_text
     }));
 
-    // Умная обрезка по символам
     let currentChars = 0;
     const smartMessages = [];
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -38,10 +36,7 @@ async function fetchSmartHistory(userId) {
       smartMessages.unshift(messages[i]);
     }
     return smartMessages;
-  } catch (e) {
-    console.error("History Error:", e);
-    return [];
-  }
+  } catch (e) { return []; }
 }
 
 async function saveMessage(userId, text, isAi, psychotype, mediaUrl = null, mediaType = null) {
@@ -66,41 +61,37 @@ async function handleAIChat(req, res) {
     const aiProvider = AI_PROVIDERS[provider];
     const aiModel = model || aiProvider.defaultModel;
     
-    // 1. Формируем System Prompt с Именем
     const username = await getUserName(req.user.id);
     const basePrompt = customPrompt || PSYCHOTYPES[psychotype]?.system_prompt || PSYCHOTYPES.empath.system_prompt;
     
-    // 🔥 ВНЕДРЕНИЕ КОНТЕКСТА (Имя)
+    // Формируем строгий системный промпт
     const enhancedSystemPrompt = `${basePrompt}\n\n[CONTEXT]\nUser Name: ${username}\nCurrent Date: ${new Date().toLocaleDateString()}`;
 
-    // 2. Сохраняем и грузим историю
     await saveMessage(req.user.id, message, false, psychotype, req.body.media_url, req.body.media_type);
     const history = await fetchSmartHistory(req.user.id);
     
-    // 3. LLM Request
-    const llmStart = Date.now();
     const messages = [
         { role: 'system', content: enhancedSystemPrompt },
         ...history,
-        { role: 'user', content: message }
+        { role: 'user', content: message } // Чистое сообщение, без добавок!
     ];
 
+    const llmStart = Date.now();
     const aiResponse = await aiProvider.chat(enhancedSystemPrompt, messages, aiModel);
     timings.llm = Date.now() - llmStart;
 
-    // 4. TTS
     let audioUrl = null;
+    let audioType = null;
+
     if (voice_mode) {
         const ttsStart = Date.now();
         const ttsResult = await generateSpeech(aiResponse, `${Date.now()}-${req.user.id}`);
         if (ttsResult) {
             audioUrl = ttsResult.url;
-            timings.tts = ttsResult.duration_ms; // Берем время из сервиса или вычисляем (Date.now() - ttsStart)
-            if(!ttsResult.duration_ms) timings.tts = Date.now() - ttsStart;
+            timings.tts = ttsResult.duration_ms || (Date.now() - ttsStart);
         }
     }
 
-    // 5. Сохраняем ответ
     await saveMessage(req.user.id, aiResponse, true, psychotype, audioUrl, 'audio/mp3');
 
     res.json({
@@ -109,10 +100,7 @@ async function handleAIChat(req, res) {
         psychotype: PSYCHOTYPES[psychotype].name,
         provider: aiProvider.name,
         audio_url: audioUrl,
-        timings: {
-            ...timings,
-            total: Date.now() - timings.start
-        }
+        timings: { ...timings, total: Date.now() - timings.start }
     });
 
   } catch (error) {
@@ -134,19 +122,16 @@ async function handleAIStream(req, res) {
     const basePrompt = customPrompt || PSYCHOTYPES[psychotype]?.system_prompt || PSYCHOTYPES.empath.system_prompt;
     const enhancedSystemPrompt = `${basePrompt}\n\n[CONTEXT]\nUser Name: ${username}`;
 
-    res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Transfer-Encoding': 'chunked',
-      'Connection': 'keep-alive'
-    });
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' });
 
     await saveMessage(req.user.id, message, false, psychotype, req.body.media_url, req.body.media_type);
 
     const history = await fetchSmartHistory(req.user.id);
+    
     const messages = [
         { role: 'system', content: enhancedSystemPrompt },
         ...history, 
-        { role: 'user', content: message }
+        { role: 'user', content: message } // Чистое сообщение
     ];
 
     let fullResponse = '';
@@ -161,7 +146,7 @@ async function handleAIStream(req, res) {
       if (chunk) fullResponse += chunk.toString();
       if (fullResponse.trim()) {
         try { await saveMessage(req.user.id, fullResponse, true, psychotype); } 
-        catch (e) { console.error('Error saving stream response:', e); }
+        catch (e) {}
       }
       return originalEnd.call(res, chunk, encoding, callback);
     };
@@ -170,7 +155,6 @@ async function handleAIStream(req, res) {
     res.end();
 
   } catch (error) {
-    console.error('Stream Error:', error);
     res.write(`Error: ${error.message}`);
     res.end();
   }
@@ -183,9 +167,7 @@ async function getChatHistory(req, res) {
       [req.user.id]
     );
     res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: 'Db Error' });
-  }
+  } catch (error) { res.status(500).json({ error: 'Db Error' }); }
 }
 
 module.exports = { handleAIChat, handleAIStream, getChatHistory };

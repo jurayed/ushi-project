@@ -1,152 +1,187 @@
 // services/ai-providers.js
+const { OpenAI } = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const AI_PROVIDERS = {
-  deepseek: {
-    name: 'DeepSeek',
-    enabled: !!process.env.DEEPSEEK_API_KEY,
-    models: {
-      'deepseek-chat': { name: 'DeepSeek Chat (V3)', context: 32000, price: 'Дешево' },
-      'deepseek-coder': { name: 'DeepSeek Coder', context: 16000, price: 'Кодинг' }
+// Хелпер для получения списка моделей через OpenAI-compatible API
+async function fetchOpenAIModels(apiKey, baseURL) {
+    if (!apiKey) return [];
+    try {
+        const client = new OpenAI({ apiKey, baseURL });
+        const list = await client.models.list();
+        return list.data.map(m => ({
+            id: m.id,
+            name: m.id, // Имя совпадает с ID, если API не дает pretty name
+            context: 128000 // Дефолт, так как API редко отдает размер контекста
+        }));
+    } catch (e) {
+        console.error(`Ошибка получения моделей с ${baseURL}:`, e.message);
+        return [];
+    }
+}
+
+const providers = {
+    // 1. OPENAI
+    openai: {
+        name: 'OpenAI',
+        defaultModel: 'gpt-4o',
+        getClient: () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
+        
+        async fetchModels() {
+            // OpenAI отдает ОЧЕНЬ много моделей (dall-e, tts). Фильтруем.
+            const all = await fetchOpenAIModels(process.env.OPENAI_API_KEY);
+            return all.filter(m => m.id.includes('gpt'));
+        },
+
+        async chat(systemPrompt, messages, model) {
+            const client = this.getClient();
+            const response = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt),
+            });
+            return response.choices[0].message.content;
+        },
+        async stream(systemPrompt, messages, model, res) {
+            const client = this.getClient();
+            const stream = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt), stream: true,
+            });
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                if (content) res.write(content);
+            }
+        }
     },
-    defaultModel: 'deepseek-chat',
-    chat: callDeepSeek,
-    stream: streamDeepSeek
-  },
-  openai: {
-    name: 'OpenAI',
-    enabled: !!process.env.OPENAI_API_KEY,
-    models: {
-      'gpt-4o': { name: 'GPT-4o (Omni)', context: 128000, price: 'Самая умная' },
-      'gpt-4-turbo-preview': { name: 'GPT-4 Turbo', context: 128000, price: 'Быстрая' },
-      'gpt-4': { name: 'GPT-4', context: 8192, price: 'Дорогая' },
-      'gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', context: 16000, price: 'Дешевая' }
+
+    // 2. DEEPSEEK
+    deepseek: {
+        name: 'DeepSeek',
+        defaultModel: 'deepseek-chat',
+        getClient: () => new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: 'https://api.deepseek.com' }),
+        
+        async fetchModels() {
+            return await fetchOpenAIModels(process.env.DEEPSEEK_API_KEY, 'https://api.deepseek.com');
+        },
+
+        async chat(systemPrompt, messages, model) {
+            const client = this.getClient();
+            const response = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt),
+            });
+            return response.choices[0].message.content;
+        },
+        async stream(systemPrompt, messages, model, res) {
+            const client = this.getClient();
+            const stream = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt), stream: true,
+            });
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                if (content) res.write(content);
+            }
+        }
     },
-    defaultModel: 'gpt-4o',
-    chat: callOpenAI,
-    stream: streamOpenAI
-  },
-  gemini: {
-    name: 'Google Gemini',
-    enabled: !!process.env.GOOGLE_API_KEY,
-    models: {
-      'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', context: 1000000, price: 'Быстрая' },
-      'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', context: 1000000, price: 'Мощная' }
+
+    // 3. xAI (GROK)
+    grok: {
+        name: 'xAI (Grok)',
+        defaultModel: 'grok-beta',
+        getClient: () => new OpenAI({ apiKey: process.env.XAI_API_KEY, baseURL: 'https://api.x.ai/v1' }),
+        
+        async fetchModels() {
+            return await fetchOpenAIModels(process.env.XAI_API_KEY, 'https://api.x.ai/v1');
+        },
+
+        async chat(systemPrompt, messages, model) {
+            const client = this.getClient();
+            const response = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt),
+            });
+            return response.choices[0].message.content;
+        },
+        async stream(systemPrompt, messages, model, res) {
+            const client = this.getClient();
+            const stream = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt), stream: true,
+            });
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                if (content) res.write(content);
+            }
+        }
     },
-    defaultModel: 'gemini-1.5-flash',
-    chat: callGemini,
-    stream: streamGemini
-  }
+
+    // 4. GROQ (FASTEST)
+    groq: {
+        name: 'Groq',
+        defaultModel: 'llama3-8b-8192',
+        getClient: () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' }),
+        
+        async fetchModels() {
+            // Groq отдает whisper и другие. Оставляем только LLM.
+            const all = await fetchOpenAIModels(process.env.GROQ_API_KEY, 'https://api.groq.com/openai/v1');
+            return all.filter(m => !m.id.includes('whisper')); 
+        },
+
+        async chat(systemPrompt, messages, model) {
+            const client = this.getClient();
+            const response = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt),
+            });
+            return response.choices[0].message.content;
+        },
+        async stream(systemPrompt, messages, model, res) {
+            const client = this.getClient();
+            const stream = await client.chat.completions.create({
+                model, messages: filterMessages(messages, systemPrompt), stream: true,
+            });
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                if (content) res.write(content);
+            }
+        }
+    },
+
+    // 5. GOOGLE (GEMINI) - Хардкод, т.к. API другое
+    google: {
+        name: 'Google Gemini',
+        defaultModel: 'gemini-pro',
+        getClient: () => new GoogleGenerativeAI(process.env.GOOGLE_API_KEY),
+
+        // Для Google пока оставим хардкод, так как их API listModels возвращает много мусора
+        async fetchModels() {
+            return [
+                { id: 'gemini-pro', name: 'Gemini Pro', context: 32000 },
+                { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', context: 1000000 },
+                { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', context: 2000000 }
+            ];
+        },
+
+        async chat(systemPrompt, messages, model) {
+            const genAI = this.getClient();
+            const aiModel = genAI.getGenerativeModel({ model });
+            const chatHistory = messages.filter(m => m.role !== 'system').map(m => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: [{ text: m.content }]
+            }));
+            const chat = aiModel.startChat({
+                history: [
+                    { role: 'user', parts: [{ text: `System: ${systemPrompt}` }] },
+                    { role: 'model', parts: [{ text: "Ok" }] },
+                    ...chatHistory.slice(0, -1)
+                ]
+            });
+            const result = await chat.sendMessage(messages[messages.length - 1].content);
+            return result.response.text();
+        },
+        async stream(systemPrompt, messages, model, res) {
+             const text = await this.chat(systemPrompt, messages, model); // Пока без стрима для Google
+             res.write(text);
+        }
+    }
 };
 
-// --- DeepSeek ---
-async function callDeepSeek(systemPrompt, messages, model) {
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
-    body: JSON.stringify({
-      model: model,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      temperature: 0.7
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || 'DeepSeek API Error');
-  return data.choices[0].message.content;
+function filterMessages(messages, systemPrompt) {
+    if (messages.length > 0 && messages[0].role === 'system') return messages;
+    return [{ role: 'system', content: systemPrompt }, ...messages];
 }
 
-async function streamDeepSeek(systemPrompt, messages, model, res) {
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` },
-    body: JSON.stringify({
-      model: model,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      stream: true
-    })
-  });
-  await pipeSSEStream(response, res);
-}
-
-// --- OpenAI ---
-async function callOpenAI(systemPrompt, messages, model) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: model,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || 'OpenAI API Error');
-  return data.choices[0].message.content;
-}
-
-async function streamOpenAI(systemPrompt, messages, model, res) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: model,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      stream: true
-    })
-  });
-  await pipeSSEStream(response, res);
-}
-
-// --- Gemini ---
-async function callGemini(systemPrompt, messages, model) {
-  const conversation = messages.map(m => `${m.role === 'user' ? 'User' : 'Model'}: ${m.content}`).join('\n');
-  const fullPrompt = `${systemPrompt}\n\nHistory:\n${conversation}\n\nModel response:`;
-
-  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${process.env.GOOGLE_API_KEY}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
-  });
-  
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || 'Gemini API Error');
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-async function streamGemini(systemPrompt, messages, model, res) {
-  const text = await callGemini(systemPrompt, messages, model);
-  const words = text.split(' ');
-  for (const word of words) {
-    res.write(word + ' ');
-    await new Promise(r => setTimeout(r, 50));
-  }
-}
-
-// --- Helper ---
-async function pipeSSEStream(upstreamResponse, res) {
-  if (!upstreamResponse.body) return;
-  const reader = upstreamResponse.body.getReader();
-  const decoder = new TextDecoder();
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            const content = data.choices[0]?.delta?.content;
-            if (content) res.write(content);
-          } catch (e) { }
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Stream Error:', err);
-    res.write(`\n[Error: ${err.message}]`);
-  }
-}
-
-module.exports = { AI_PROVIDERS };
+module.exports = { AI_PROVIDERS: providers };

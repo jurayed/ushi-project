@@ -1,11 +1,10 @@
+// services/ai-stream.js
 const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
 const { OpenAI } = require('openai');
 const { pool } = require('../models/database');
 
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-
-// Базовый клиент OpenAI (для TTS, он всегда нужен)
-const openaiBase = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openaiBase = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // Fallback + TTS
 
 async function getUserName(userId) {
     try {
@@ -45,7 +44,7 @@ class AiStreamSession {
         this.sentenceBuffer = ""; 
         this.systemPrompt = "Ты эмпатичный собеседник.";
         
-        // 🔥 НАСТРОЙКИ МОДЕЛИ
+        // Настройки по умолчанию
         this.provider = 'openai'; 
         this.model = 'gpt-4o';
         
@@ -54,12 +53,10 @@ class AiStreamSession {
 
     start(config = {}) {
         if (config.systemPrompt) this.systemPrompt = config.systemPrompt;
-        
-        // Применяем настройки с фронта
         if (config.provider) this.provider = config.provider;
         if (config.model) this.model = config.model;
 
-        console.log(`🎤 Config: Provider=${this.provider}, Model=${this.model}`);
+        console.log(`🎤 Live Start: ${this.provider}/${this.model} for user ${this.userId}`);
 
         this.dgConnection = deepgram.listen.live({
             model: "nova-2", language: "ru", smart_format: true,
@@ -76,9 +73,8 @@ class AiStreamSession {
                 if (data.is_final && transcript.trim().length > 0) {
                     
                     this.metrics.stt_end = Date.now();
-                    const sttTime = this.metrics.stt_end - this.metrics.stt_start;
-                    this.sendMetric('stt', sttTime);
-                    this.metrics.stt_start = Date.now(); 
+                    this.sendMetric('stt', this.metrics.stt_end - this.metrics.stt_start);
+                    this.metrics.stt_start = Date.now();
 
                     this.socket.emit('user_transcription', { text: transcript, isFinal: true });
                     this.processLLM(transcript);
@@ -101,15 +97,17 @@ class AiStreamSession {
         this.socket.emit('latency_metric', { type, value });
     }
 
-    // 🔥 ГЕНЕРАЦИЯ КЛИЕНТА В ЗАВИСИМОСТИ ОТ ПРОВАЙДЕРА
+    // Выбор клиента (Важно для скорости)
     getLlmClient() {
         if (this.provider === 'deepseek') {
-            return new OpenAI({
-                apiKey: process.env.DEEPSEEK_API_KEY,
-                baseURL: 'https://api.deepseek.com'
-            });
+            return new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: 'https://api.deepseek.com' });
         }
-        // Fallback for OpenAI or unsupported providers in Live Mode
+        if (this.provider === 'grok') {
+            return new OpenAI({ apiKey: process.env.XAI_API_KEY, baseURL: 'https://api.x.ai/v1' });
+        }
+        if (this.provider === 'groq') {
+            return new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
+        }
         return openaiBase;
     }
 
@@ -124,18 +122,27 @@ class AiStreamSession {
             const username = await getUserName(this.userId);
             
             const enhancedPrompt = `${this.systemPrompt}\n\n[CONTEXT]\nUser Name: ${username}`;
+            
+            // Чистое сообщение пользователя (без скрытых инструкций)
+            const userContent = text;
 
             const messages = [
-                { role: "system", content: enhancedPrompt + " Отвечай кратко, разговорно." },
+                { role: "system", content: enhancedPrompt },
                 ...history,
-                { role: "user", content: text }
+                { role: "user", content: userContent }
             ];
 
-            // Выбираем правильного клиента
             const client = this.getLlmClient();
 
+            // Google пока скипаем в live
+            if (this.provider === 'google') {
+                this.socket.emit('ai_text_chunk', { text: "[Google Gemini Live not supported, switch to Groq/Grok/OpenAI]" });
+                this.isProcessing = false;
+                return;
+            }
+
             const stream = await client.chat.completions.create({
-                model: this.model, // Используем выбранную модель!
+                model: this.model, 
                 messages: messages, 
                 stream: true,
             });
@@ -187,8 +194,6 @@ class AiStreamSession {
     async generateAndSendAudio(text) {
         try {
             this.metrics.tts_start = Date.now();
-            
-            // TTS всегда через OpenAI (пока что)
             const mp3 = await openaiBase.audio.speech.create({
                 model: "tts-1", voice: "shimmer", input: text, response_format: "mp3",
             });
@@ -216,8 +221,7 @@ module.exports = {
         socket.on('start_voice_chat', (config) => {
             const session = new AiStreamSession(socket, socket.userId);
             sessions.set(socket.id, session);
-            session.start(config); 
-            console.log(`🎤 Session started for ${socket.id}`);
+            session.start(config);
         });
 
         socket.on('audio_stream_data', (chunk) => {

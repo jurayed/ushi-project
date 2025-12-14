@@ -59,7 +59,7 @@ async function startStreaming() {
     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
 
-    // 🔥 БЕРЕМ НАСТРОЙКИ (МОДЕЛЬ, ПРОВАЙДЕР, ПРОМПТ)
+    // БЕРЕМ НАСТРОЙКИ (МОДЕЛЬ, ПРОВАЙДЕР, ПРОМПТ)
     const params = getChatParams();
     window.socket.emit('start_voice_chat', { 
         systemPrompt: params.systemPrompt,
@@ -187,10 +187,10 @@ window.startAudioMessage = async function() {
 
 window.stopAudioMessage = function() {
     if (manualMediaRecorder && manualMediaRecorder.state === 'recording') {
-        if (Date.now() - recordStartTime < 500) {
+        if (Date.now() - recordStartTime < 600) {
             manualMediaRecorder.stop();
-            showInfo('❌ Слишком коротко');
             manualAudioChunks = [];
+            showInfo('❌ Слишком коротко');
             return;
         }
         manualMediaRecorder.stop(); 
@@ -201,7 +201,7 @@ window.stopAudioMessage = function() {
 async function sendAudioWithTranscription() {
     if (manualAudioChunks.length === 0) return;
     const blob = new Blob(manualAudioChunks, { type: 'audio/webm' });
-    if (blob.size < 1000) return;
+    if (blob.size < 1500) return;
 
     const formData = new FormData();
     formData.append('audio', blob, 'voice.webm');
@@ -284,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.ontouchend = (e) => { e.preventDefault(); window.stopAudioMessage(); };
     }
 
-    // 2. 🔥 ФИКС ENTER (Отправка по нажатию)
+    // 2. Enter
     const msgInput = document.getElementById('messageInput');
     if (msgInput) {
         msgInput.addEventListener('keypress', (e) => {
@@ -292,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 3. Промпты
+    // 3. Промпты и настройки
     const psychotypeSelect = document.getElementById('psychotype');
     const promptArea = document.getElementById('systemPrompt');
     if (psychotypeSelect && promptArea) {
@@ -304,6 +304,9 @@ document.addEventListener('DOMContentLoaded', () => {
         psychotypeSelect.value = savedType;
         promptArea.value = PSYCHOTYPE_PROMPTS[savedType] || "";
     }
+
+    // 🔥 4. АВТОЗАГРУЗКА ПРОВАЙДЕРОВ
+    window.loadProviders();
 });
 
 function updateLatencyPanel(timings) {
@@ -314,9 +317,9 @@ function updateLatencyPanel(timings) {
     }
 }
 
-// ... ОСТАЛЬНЫЕ ХЕЛПЕРЫ (loadProviders, loadChatHistory, etc.) ...
 window.loadProviders = async function() {
     try {
+        console.log("Loading providers...");
         const res = await fetch('/api/providers');
         const providers = await res.json();
         const select = document.getElementById('provider');
@@ -333,7 +336,7 @@ window.loadProviders = async function() {
         });
         if (select.options.length > 0) updateModels();
         select.addEventListener('change', updateModels);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Providers Load Error:", e); }
 };
 
 function updateModels() {
@@ -415,6 +418,29 @@ function appendMessage(role, text, meta = {}) {
 function scrollToBottom() { const c = document.getElementById('aiChatContainer'); c.scrollTop = c.scrollHeight; }
 function toggleTyping(show) { const el = document.getElementById('typingIndicator'); if(el) el.style.display = show ? 'block' : 'none'; }
 
+// ФУНКЦИЯ ОЧИСТКИ ИСТОРИИ
+window.clearHistory = async function() {
+    if (!confirm('Вы уверены? Это удалит всю переписку с ИИ навсегда.')) return;
+    
+    try {
+        const res = await fetch('/api/chat/ai/history', {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + window.currentToken }
+        });
+        
+        if (res.ok) {
+            // Очищаем UI
+            const container = document.getElementById('aiChatContainer');
+            if (container) container.innerHTML = '<div style="text-align:center; opacity:0.5; margin-top:50px;">История очищена ✨</div>';
+            showSuccess('Память ИИ стерта');
+            toggleAiSettings(false); // Закрываем настройки
+        } else {
+            showError('Ошибка очистки');
+        }
+    } catch (e) {
+        showError(e.message);
+    }
+};
 // EXPORTS
 window.toggleLiveMode = toggleLiveMode;
 window.startAudioMessage = startAudioMessage;
@@ -423,4 +449,4 @@ window.testAIChat = testAIChat;
 window.loadProviders = loadProviders;
 window.loadChatHistory = loadChatHistory;
 
-console.log('✅ AI Chat module loaded (Enter Fix + Dynamic Model)');
+console.log('✅ AI Chat module loaded (Auto-Settings)');
