@@ -2,6 +2,55 @@
 const { OpenAI } = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// Фильтр моделей с расширенным списком исключений
+function filterLLMModels(models, providerId) {
+    if (!models || models.length === 0) return [];
+    
+    // Ключевые слова для исключения
+    const excludeKeywords = [
+        'coder', 'vision', 'instruct', 'preview', 'embedding', 
+        'image', 'tts', 'search', 'whisper', 'audio', '2024', 
+        'experimental'
+    ];
+    
+    // Фильтрация
+    let filtered = models.filter(model => {
+        const id = model.id.toLowerCase();
+        const name = model.name?.toLowerCase() || '';
+        
+        // Исключаем модели, содержащие ключевые слова
+        if (excludeKeywords.some(keyword => 
+            id.includes(keyword) || name.includes(keyword))) {
+            return false;
+        }
+        
+        // Для Google дополнительно исключаем некоторые специализированные модели
+        if (providerId === 'google') {
+            // Исключаем модели с 'imagen', 'veo', 'aqa', 'robotics' в имени
+            const googleExclude = ['imagen', 'veo', 'aqa', 'robotics', 'computer-use'];
+            if (googleExclude.some(keyword => id.includes(keyword) || name.includes(keyword))) {
+                return false;
+            }
+        }
+        
+        return true;
+    });
+    
+    // Сортировка по алфавиту для порядка
+    filtered.sort((a, b) => a.id.localeCompare(b.id));
+    
+    // Удаление дубликатов по короткому имени
+    const seen = new Set();
+    filtered = filtered.filter(model => {
+        const shortName = model.id.split('/').pop().split(':')[0];
+        if (seen.has(shortName)) return false;
+        seen.add(shortName);
+        return true;
+    });
+    
+    return filtered;
+}
+
 // Хелпер для получения списка моделей через OpenAI-compatible API
 async function fetchOpenAIModels(apiKey, baseURL) {
     if (!apiKey) return [];
@@ -10,11 +59,45 @@ async function fetchOpenAIModels(apiKey, baseURL) {
         const list = await client.models.list();
         return list.data.map(m => ({
             id: m.id,
-            name: m.id, // Имя совпадает с ID, если API не дает pretty name
-            context: 128000 // Дефолт, так как API редко отдает размер контекста
+            name: m.id,
+            context: 128000
         }));
     } catch (e) {
         console.error(`Ошибка получения моделей с ${baseURL}:`, e.message);
+        return [];
+    }
+}
+
+// Хелпер для получения списка моделей Google Gemini (специфичный API)
+async function fetchGoogleModels(apiKey) {
+    if (!apiKey) return [];
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Базовая фильтрация: только модели с generateContent
+        const filteredModels = data.models
+            .filter(model => model.supportedGenerationMethods?.includes('generateContent'))
+            .map(model => {
+                const shortName = model.name.split('/').pop();
+                return {
+                    id: shortName,
+                    name: model.displayName || shortName,
+                    context: model.inputTokenLimit || 4096
+                };
+            });
+        
+        console.log(`Найдено ${filteredModels.length} моделей Google Gemini`);
+        return filteredModels;
+        
+    } catch (error) {
+        console.error('Ошибка получения моделей от Google:', error.message);
         return [];
     }
 }
@@ -27,9 +110,8 @@ const providers = {
         getClient: () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
         
         async fetchModels() {
-            // OpenAI отдает ОЧЕНЬ много моделей (dall-e, tts). Фильтруем.
             const all = await fetchOpenAIModels(process.env.OPENAI_API_KEY);
-            return all.filter(m => m.id.includes('gpt'));
+            return filterLLMModels(all, 'openai');
         },
 
         async chat(systemPrompt, messages, model) {
@@ -58,7 +140,8 @@ const providers = {
         getClient: () => new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: 'https://api.deepseek.com' }),
         
         async fetchModels() {
-            return await fetchOpenAIModels(process.env.DEEPSEEK_API_KEY, 'https://api.deepseek.com');
+            const all = await fetchOpenAIModels(process.env.DEEPSEEK_API_KEY, 'https://api.deepseek.com');
+            return filterLLMModels(all, 'deepseek');
         },
 
         async chat(systemPrompt, messages, model) {
@@ -87,7 +170,8 @@ const providers = {
         getClient: () => new OpenAI({ apiKey: process.env.XAI_API_KEY, baseURL: 'https://api.x.ai/v1' }),
         
         async fetchModels() {
-            return await fetchOpenAIModels(process.env.XAI_API_KEY, 'https://api.x.ai/v1');
+            const all = await fetchOpenAIModels(process.env.XAI_API_KEY, 'https://api.x.ai/v1');
+            return filterLLMModels(all, 'grok');
         },
 
         async chat(systemPrompt, messages, model) {
@@ -116,9 +200,8 @@ const providers = {
         getClient: () => new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' }),
         
         async fetchModels() {
-            // Groq отдает whisper и другие. Оставляем только LLM.
             const all = await fetchOpenAIModels(process.env.GROQ_API_KEY, 'https://api.groq.com/openai/v1');
-            return all.filter(m => !m.id.includes('whisper')); 
+            return filterLLMModels(all, 'groq');
         },
 
         async chat(systemPrompt, messages, model) {
@@ -140,19 +223,15 @@ const providers = {
         }
     },
 
-    // 5. GOOGLE (GEMINI) - Хардкод, т.к. API другое
+    // 5. GOOGLE (GEMINI)
     google: {
         name: 'Google Gemini',
-        defaultModel: 'gemini-pro',
+        defaultModel: 'gemini-2.5-flash',
         getClient: () => new GoogleGenerativeAI(process.env.GOOGLE_API_KEY),
 
-        // Для Google пока оставим хардкод, так как их API listModels возвращает много мусора
         async fetchModels() {
-            return [
-                { id: 'gemini-pro', name: 'Gemini Pro', context: 32000 },
-                { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', context: 1000000 },
-                { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', context: 2000000 }
-            ];
+            const all = await fetchGoogleModels(process.env.GOOGLE_API_KEY);
+            return filterLLMModels(all, 'google');
         },
 
         async chat(systemPrompt, messages, model) {
@@ -173,7 +252,7 @@ const providers = {
             return result.response.text();
         },
         async stream(systemPrompt, messages, model, res) {
-             const text = await this.chat(systemPrompt, messages, model); // Пока без стрима для Google
+             const text = await this.chat(systemPrompt, messages, model);
              res.write(text);
         }
     }
