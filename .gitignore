@@ -86,3 +86,6 @@ coverage/
 # Temporary folders
 tmp/
 temp/
+
+# User uploads (audio, images)
+public/uploads/
