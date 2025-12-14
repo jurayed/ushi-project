@@ -65,11 +65,23 @@
 
         <!-- СЕКЦИЯ AI -->
         <div id="aiSection" class="chat-layout glass-panel hidden">
-            <!-- Шапка чата -->
+            <!-- АВАТАР (Скрыт по умолчанию) -->
+			<div id="avatarContainer" class="hidden" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+				<canvas id="avatarCanvas" width="300" height="300"></canvas>
+				<div id="liveStatus" style="color: white; margin-top: 20px; font-size: 1.2rem;">Слушаю...</div>
+				<button class="btn btn-danger rounded-circle" style="width: 60px; height: 60px; margin-top: 30px;" onclick="toggleLiveMode()">
+					<i class="fas fa-stop"></i>
+				</button>
+			</div>			
+			<!-- Шапка чата -->
             <div class="chat-header">
                 <button class="btn-icon" onclick="showModeSelection()"><i class="fas fa-arrow-left"></i></button>
                 <h3>AI Companion</h3>
-                <!-- Кнопка настроек -->
+				<!-- КНОПКА ЖИВОГО РЕЖИМА -->
+				<button id="btnLiveMode" class="btn-icon" style="color: #00cec9;" onclick="toggleLiveMode()" title="Живой разговор">
+					<i class="fas fa-headset"></i>
+				</button>
+				<!-- Кнопка настроек -->
                 <button class="btn-icon" onclick="toggleAiSettings(true)"><i class="fas fa-cog"></i></button>
             </div>
 
@@ -83,6 +95,12 @@
                 AI печатает...
             </div>
 
+			<!-- ... (Чат контейнер) ... -->
+
+			<!-- ПАНЕЛЬ ЗАДЕРЖКИ (Снизу) -->
+			<div id="latencyPanel" class="hidden" style="position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 5px 15px; border-radius: 20px; font-size: 0.8rem; color: #aaa; pointer-events: none;">
+				STT: <span id="latStt">-</span>ms | LLM: <span id="latLlm">-</span>ms | TTS: <span id="latTts">-</span>ms
+			</div>
             <!-- Ввод -->
             <div class="input-area">
                 <button id="recordButton" class="btn-icon"><i class="fas fa-microphone"></i></button>

@@ -1,5 +1,4 @@
 // services/ai-providers.js
-// В Node.js 18+ fetch встроен, импорт не нужен
 
 const AI_PROVIDERS = {
   deepseek: {
@@ -19,9 +18,8 @@ const AI_PROVIDERS = {
     models: {
       'gpt-4o': { name: 'GPT-4o (Omni)', context: 128000, price: 'Самая умная' },
       'gpt-4-turbo-preview': { name: 'GPT-4 Turbo', context: 128000, price: 'Быстрая' },
-      'gpt-4': { name: 'GPT-4 (Classic)', context: 8192, price: 'Дорогая' },
-      'gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', context: 16000, price: 'Быстрая/Дешевая' },
-      'gpt-3.5-turbo-16k': { name: 'GPT-3.5 Turbo 16k', context: 16000, price: 'Большой контекст' }
+      'gpt-4': { name: 'GPT-4', context: 8192, price: 'Дорогая' },
+      'gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', context: 16000, price: 'Дешевая' }
     },
     defaultModel: 'gpt-4o',
     chat: callOpenAI,
@@ -31,10 +29,8 @@ const AI_PROVIDERS = {
     name: 'Google Gemini',
     enabled: !!process.env.GOOGLE_API_KEY,
     models: {
-      'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', context: 1000000, price: 'Мощная' },
       'gemini-1.5-flash': { name: 'Gemini 1.5 Flash', context: 1000000, price: 'Быстрая' },
-      'gemini-1.0-pro': { name: 'Gemini 1.0 Pro', context: 32000, price: 'Стабильная' },
-      'gemini-2.0-flash': { name: 'Gemini 2.0 Flash (Exp)', context: 1000000, price: 'Экспериментальная' }
+      'gemini-1.5-pro': { name: 'Gemini 1.5 Pro', context: 1000000, price: 'Мощная' }
     },
     defaultModel: 'gemini-1.5-flash',
     chat: callGemini,
@@ -42,7 +38,7 @@ const AI_PROVIDERS = {
   }
 };
 
-// ==================== DEEPSEEK ====================
+// --- DeepSeek ---
 async function callDeepSeek(systemPrompt, messages, model) {
   const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
     method: 'POST',
@@ -71,7 +67,7 @@ async function streamDeepSeek(systemPrompt, messages, model, res) {
   await pipeSSEStream(response, res);
 }
 
-// ==================== OPENAI ====================
+// --- OpenAI ---
 async function callOpenAI(systemPrompt, messages, model) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -99,7 +95,7 @@ async function streamOpenAI(systemPrompt, messages, model, res) {
   await pipeSSEStream(response, res);
 }
 
-// ==================== GEMINI ====================
+// --- Gemini ---
 async function callGemini(systemPrompt, messages, model) {
   const conversation = messages.map(m => `${m.role === 'user' ? 'User' : 'Model'}: ${m.content}`).join('\n');
   const fullPrompt = `${systemPrompt}\n\nHistory:\n${conversation}\n\nModel response:`;
@@ -125,10 +121,9 @@ async function streamGemini(systemPrompt, messages, model, res) {
   }
 }
 
-// ==================== HELPER: SSE PIPING ====================
+// --- Helper ---
 async function pipeSSEStream(upstreamResponse, res) {
   if (!upstreamResponse.body) return;
-  
   const reader = upstreamResponse.body.getReader();
   const decoder = new TextDecoder();
 
@@ -136,17 +131,15 @@ async function pipeSSEStream(upstreamResponse, res) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      
       const chunk = decoder.decode(value);
       const lines = chunk.split('\n');
-      
       for (const line of lines) {
         if (line.startsWith('data: ') && !line.includes('[DONE]')) {
           try {
             const data = JSON.parse(line.slice(6));
             const content = data.choices[0]?.delta?.content;
             if (content) res.write(content);
-          } catch (e) { /* ignore parse errors */ }
+          } catch (e) { }
         }
       }
     }
