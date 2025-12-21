@@ -22,8 +22,11 @@ body {
                       radial-gradient(circle at 90% 80%, rgba(0, 206, 201, 0.1) 0%, transparent 20%);
     color: var(--text-main);
     font-family: var(--font-stack);
-    height: 100vh;
+    /* Исправление для мобильных: используем динамическую высоту вьюпорта */
+    height: 100dvh; 
     overflow: hidden;
+    /* Гарантирует, что на iOS высота считается правильно */
+    min-height: -webkit-fill-available;
 }
 
 /* --- Common Layout --- */
@@ -101,6 +104,7 @@ input:focus { outline: none; border-color: var(--primary); }
     align-items: center;
     padding: 15px 25px;
     margin-bottom: 20px;
+    flex-shrink: 0; /* Шапка не сжимается */
 }
 .logo { font-size: 1.5rem; font-weight: bold; background: linear-gradient(45deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
@@ -126,8 +130,11 @@ input:focus { outline: none; border-color: var(--primary); }
 .chat-layout {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 120px); /* Full height minus header */
+    /* ИЗМЕНЕНИЕ: Используем flex:1 вместо фиксированного calc, чтобы чат занимал всё доступное место */
+    flex: 1;
+    min-height: 0; /* Важно для работы скролла внутри flex-элемента */
     position: relative;
+    overflow: hidden; /* Чтобы скролл был только внутри messages-area */
 }
 
 /* Header inside chat */
@@ -139,6 +146,7 @@ input:focus { outline: none; border-color: var(--primary); }
     border-bottom: 1px solid rgba(255,255,255,0.05);
     background: rgba(0,0,0,0.2);
     border-radius: 16px 16px 0 0;
+    flex-shrink: 0;
 }
 
 .messages-area {
@@ -148,6 +156,8 @@ input:focus { outline: none; border-color: var(--primary); }
     display: flex;
     flex-direction: column;
     gap: 15px;
+    /* Плавная прокрутка */
+    scroll-behavior: smooth;
 }
 
 /* Bubbles */
@@ -189,6 +199,10 @@ input:focus { outline: none; border-color: var(--primary); }
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-shrink: 0;
+    
+    /* ИЗМЕНЕНИЕ: Учет безопасных зон (для телефонов с полоской снизу и экранными кнопками) */
+    padding-bottom: max(15px, env(safe-area-inset-bottom));
 }
 .input-area input { margin-bottom: 0; background: rgba(255,255,255,0.05); border: none; }
 .recording-active { color: var(--danger); animation: pulse 1.5s infinite; }
@@ -262,4 +276,21 @@ select {
     color: white;
     z-index: 9999;
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+
+/* ИЗМЕНЕНИЕ: Адаптация для мобильных устройств */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px; /* Меньше отступов по краям на телефоне */
+    }
+    .top-bar {
+        padding: 10px 15px;
+        margin-bottom: 10px;
+    }
+    .chat-layout {
+        /* На мобилках радиусы можно уменьшить или убрать, если нужно */
+    }
+    .input-area {
+        /* Убеждаемся, что на мобилках ввод не прилипает к краю */
+    }
 }

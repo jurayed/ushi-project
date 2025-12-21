@@ -9,6 +9,9 @@ const PSYCHOTYPE_PROMPTS = {
 
 let availableProviders = [];
 let availableModels = {};
+// <<<--- ИЗМЕНЕНИЕ: Добавили хранилище для дефолтных моделей провайдеров
+let providerDefaults = {}; 
+
 let isLiveMode = false;
 
 // STREAMING
@@ -317,6 +320,7 @@ function updateLatencyPanel(timings) {
     }
 }
 
+// <<<--- ИЗМЕНЕНИЕ: Обновленная функция загрузки провайдеров (сохраняем дефолты)
 window.loadProviders = async function() {
     try {
         console.log("Loading providers...");
@@ -325,13 +329,18 @@ window.loadProviders = async function() {
         const select = document.getElementById('provider');
         select.innerHTML = '';
         availableModels = {};
+        providerDefaults = {}; // Очищаем дефолты
+
         providers.forEach(p => {
             if (p.enabled) {
                 const opt = document.createElement('option');
                 opt.value = p.id;
                 opt.textContent = p.name;
                 select.appendChild(opt);
+                
                 availableModels[p.id] = p.models;
+                // Сохраняем модель по умолчанию, которую прислал сервер
+                providerDefaults[p.id] = p.defaultModel; 
             }
         });
         if (select.options.length > 0) updateModels();
@@ -339,17 +348,45 @@ window.loadProviders = async function() {
     } catch (e) { console.error("Providers Load Error:", e); }
 };
 
+// <<<--- ИЗМЕНЕНИЕ: Обновленная функция обновления моделей (с автовыбором рабочей)
 function updateModels() {
     const providerId = document.getElementById('provider').value;
     const select = document.getElementById('model');
     select.innerHTML = '';
-    if (availableModels[providerId]) {
-        Object.entries(availableModels[providerId]).forEach(([id, info]) => {
+    
+    // Получаем список моделей и дефолтную
+    const models = availableModels[providerId];
+    const defaultTarget = providerDefaults[providerId]; 
+    let defaultFound = false;
+
+    if (models) {
+        // Поддерживаем формат массива или объекта (для совместимости)
+        const modelsList = Array.isArray(models) ? models : Object.entries(models).map(([k, v]) => ({id: k, ...v}));
+
+        modelsList.forEach((info) => {
+            const id = info.id || info; // Если info - просто строка
+            const name = info.name || id;
+
             const opt = document.createElement('option');
             opt.value = id;
-            opt.textContent = `${info.name}`;
+            opt.textContent = name;
             select.appendChild(opt);
+
+            // Проверяем, совпадает ли эта модель с дефолтной
+            if (id === defaultTarget) {
+                defaultFound = true;
+            }
         });
+
+        // ЛОГИКА АВТОВЫБОРА:
+        if (defaultFound) {
+            // Если дефолтная модель есть в списке — ставим её
+            select.value = defaultTarget;
+        } else if (select.options.length > 0) {
+            // Если дефолтная сломана (нет в списке), выбираем ПЕРВУЮ доступную
+            select.selectedIndex = 0;
+            console.warn(`Default model "${defaultTarget}" missing. Auto-selected: ${select.value}`);
+        }
     }
 }
 

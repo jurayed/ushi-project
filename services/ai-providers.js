@@ -2,6 +2,14 @@
 const { OpenAI } = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// --- ДОБАВЛЕНО: Импорт черного списка ---
+let brokenModelsList = [];
+try {
+    brokenModelsList = require('./broken-models');
+} catch (e) {
+    console.warn('Файл broken-models.js не найден, фильтрация по черному списку отключена.');
+}
+
 // Фильтр моделей с расширенным списком исключений
 function filterLLMModels(models, providerId) {
     if (!models || models.length === 0) return [];
@@ -18,6 +26,12 @@ function filterLLMModels(models, providerId) {
         const id = model.id.toLowerCase();
         const name = model.name?.toLowerCase() || '';
         
+		// --- ДОБАВЛЕНО: Проверка по сгенерированному черному списку ---
+        // Если модель есть в списке broken-models.js — пропускаем её
+        if (brokenModelsList.includes(model.id)) {
+            return false;
+        }
+		
         // Исключаем модели, содержащие ключевые слова
         if (excludeKeywords.some(keyword => 
             id.includes(keyword) || name.includes(keyword))) {
@@ -48,6 +62,10 @@ function filterLLMModels(models, providerId) {
         return true;
     });
     
+	// --- ДОБАВЛЕНО: Важная проверка Default Model ---
+    // Если список пуст, возвращаем пустоту
+    if (filtered.length === 0) return [];
+	
     return filtered;
 }
 
