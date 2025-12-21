@@ -162,12 +162,25 @@ async function handleAIStream(req, res) {
 
 async function getChatHistory(req, res) {
   try {
+    const limit = parseInt(req.query.limit) || 50; // Грузим по 50 штук
+    const beforeId = parseInt(req.query.beforeId) || 2147483647; // Макс. INT (бесконечность)
+
     const result = await pool.query(
-      `SELECT * FROM messages WHERE user_id = $1 ORDER BY sent_at ASC`,
-      [req.user.id]
+      `SELECT id, message_text, is_ai_response, sent_at, ai_psychotype, media_url, media_type 
+       FROM messages 
+       WHERE user_id = $1 AND id < $2 
+       ORDER BY id DESC 
+       LIMIT $3`,
+      [req.user.id, beforeId, limit]
     );
-    res.json(result.rows);
-  } catch (error) { res.status(500).json({ error: 'Db Error' }); }
+
+    // Возвращаем в правильном порядке (от старых к новым), чтобы фронтенд просто их отобразил
+    // Но API отдал их от новых к старым (DESC), поэтому переворачиваем
+    res.json(result.rows.reverse());
+  } catch (error) { 
+      console.error(error);
+      res.status(500).json({ error: 'Db Error' }); 
+  }
 }
 
 module.exports = { handleAIChat, handleAIStream, getChatHistory };

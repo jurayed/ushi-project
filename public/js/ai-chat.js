@@ -12,7 +12,12 @@ let availableModels = {};
 let providerDefaults = {}; 
 let isLiveMode = false;
 
-// STREAMING
+// Pagination variables
+let oldestLoadedId = Infinity;
+let isLoadingHistory = false;
+let allHistoryLoaded = false;
+
+// STREAMING & AUDIO
 let audioContext = null;
 let processor = null;
 let source = null;
@@ -39,7 +44,7 @@ async function playHighQualityTTS(text) {
         const audio = new Audio(url);
         audio.play();
     } catch (e) {
-        console.warn("HQ TTS failed, fallback to browser", e);
+        console.warn("HQ TTS failed", e);
     }
 }
 
@@ -266,10 +271,7 @@ async function chatRegular(psychotype, provider, model, message, systemPrompt) {
         toggleTyping(false);
         if (data.success) {
             appendMessage('ai', data.response, { psychotype });
-            
-            // 🔥 ОЗВУЧКА ОТВЕТА (Если есть текст)
             playHighQualityTTS(data.response);
-            
             updateLatencyPanel(data.timings);
         }
     } catch (e) { toggleTyping(false); showError(e.message); }
@@ -278,7 +280,7 @@ async function chatRegular(psychotype, provider, model, message, systemPrompt) {
 async function chatStream(psychotype, provider, model, message, systemPrompt) {
     const messageDiv = appendMessage('ai', '...', { psychotype });
     const contentDiv = messageDiv.querySelector('.message-content');
-    let fullResponse = ""; // Накапливаем текст для озвучки
+    let fullResponse = ""; 
 
     try {
         const response = await fetch('/api/chat/ai/stream', {
@@ -296,14 +298,12 @@ async function chatStream(psychotype, provider, model, message, systemPrompt) {
             fullResponse += textChunk;
             scrollToBottom();
         }
-        
-        // 🔥 ОЗВУЧКА ПОСЛЕ ОКОНЧАНИЯ СТРИМА
         playHighQualityTTS(fullResponse);
-
     } catch (e) { contentDiv.innerHTML += `<br><span style="color:red">Error: ${e.message}</span>`; }
 }
 
-// === INIT & HELPERS ===
+// ==================== HISTORY & INIT ====================
+
 document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('recordButton');
     if (btn) {
@@ -332,6 +332,17 @@ document.addEventListener('DOMContentLoaded', () => {
         promptArea.value = PSYCHOTYPE_PROMPTS[savedType] || "";
     }
 
+    // Слушатель скролла для подгрузки истории
+    const chatContainer = document.getElementById('aiChatContainer');
+    if (chatContainer) {
+        chatContainer.addEventListener('scroll', () => {
+            // Если прокрутили до верха и не загружаем сейчас и есть что грузить
+            if (chatContainer.scrollTop < 50 && !isLoadingHistory && !allHistoryLoaded) {
+                window.loadChatHistory(true);
+            }
+        });
+    }
+
     window.loadProviders();
 });
 
@@ -343,7 +354,6 @@ function updateLatencyPanel(timings) {
     }
 }
 
-// <<<--- ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ (С ЗАЩИТОЙ ОТ ОШИБОК)
 window.loadProviders = async function() {
     try {
         console.log("Loading providers...");
@@ -368,26 +378,19 @@ window.loadProviders = async function() {
                 
                 if (p.id.toLowerCase().includes('groq')) {
                     groqIndex = index;
-                    
-                    // 🔥 ФИКС: Превращаем модели в массив, если они вдруг объект (защита от краша)
+                    // Fix models array safety
                     const modelsList = Array.isArray(p.models) 
                         ? p.models 
                         : Object.entries(p.models).map(([k, v]) => ({id: k, ...v}));
-
-                    // Ищем Llama 3 модель
+                    
                     const llamaModel = modelsList.find(m => m.id.includes('llama') && m.id.includes('8b'));
-                    if (llamaModel) {
-                        providerDefaults[p.id] = llamaModel.id;
-                    }
+                    if (llamaModel) providerDefaults[p.id] = llamaModel.id;
                 }
             }
         });
         
-        if (groqIndex !== -1) {
-            select.selectedIndex = groqIndex;
-        } else if (select.options.length > 0) {
-            select.selectedIndex = 0;
-        }
+        if (groqIndex !== -1) select.selectedIndex = groqIndex;
+        else if (select.options.length > 0) select.selectedIndex = 0;
 
         if (select.options.length > 0) updateModels();
         select.addEventListener('change', updateModels);
@@ -415,33 +418,79 @@ function updateModels() {
             opt.textContent = name;
             select.appendChild(opt);
 
-            if (id === defaultTarget) {
-                defaultFound = true;
-            }
+            if (id === defaultTarget) defaultFound = true;
         });
 
-        if (defaultFound) {
-            select.value = defaultTarget;
-        } else if (select.options.length > 0) {
+        if (defaultFound) select.value = defaultTarget;
+        else if (select.options.length > 0) {
             select.selectedIndex = 0;
-            console.warn(`Default model "${defaultTarget}" missing. Auto-selected: ${select.value}`);
+            console.warn(`Default model missing. Auto-selected: ${select.value}`);
         }
     }
 }
 
-window.loadChatHistory = async function() {
+// <<<--- ИЗМЕНЕНИЕ: ЛОГИКА ПАГИНАЦИИ ИСТОРИИ
+window.loadChatHistory = async function(isLoadMore = false) {
     const container = document.getElementById('aiChatContainer');
     if (!container) return;
-    container.innerHTML = '';
-    const res = await fetch('/api/chat/ai/history', {
-        headers: { 'Authorization': 'Bearer ' + window.currentToken }
-    });
-    const msgs = await res.json();
-    msgs.forEach(m => appendMessage(
-        m.is_ai_response ? 'ai' : 'user', 
-        m.message_text, 
-        { media_url: m.media_url, psychotype: m.ai_psychotype }
-    ));
+    
+    if (isLoadingHistory) return;
+    isLoadingHistory = true;
+
+    // Если это первоначальная загрузка - сбрасываем счетчик
+    if (!isLoadMore) {
+        container.innerHTML = '';
+        oldestLoadedId = Infinity;
+        allHistoryLoaded = false;
+    }
+
+    const prevHeight = container.scrollHeight;
+    
+    try {
+        const url = `/api/chat/ai/history?limit=30&beforeId=${oldestLoadedId !== Infinity ? oldestLoadedId : ''}`;
+        
+        const res = await fetch(url, {
+            headers: { 'Authorization': 'Bearer ' + window.currentToken }
+        });
+        const msgs = await res.json();
+        
+        if (msgs.length === 0) {
+            allHistoryLoaded = true;
+            if (!isLoadMore) container.innerHTML = '<div style="text-align:center; opacity:0.5; margin-top:50px;">Начните общение ✨</div>';
+        } else {
+            // Обновляем самый старый ID
+            oldestLoadedId = msgs[0].id;
+            
+            // Отрисовываем
+            msgs.forEach(m => {
+                // Если "loadMore" - вставляем в начало (prepend), иначе в конец (append)
+                // Но так как у нас функция appendMessage, мы просто используем prepend для DOM элемента
+                const msgEl = createMessageElement(
+                    m.is_ai_response ? 'ai' : 'user', 
+                    m.message_text, 
+                    { media_url: m.media_url, psychotype: m.ai_psychotype, created_at: m.sent_at }
+                );
+                
+                if (isLoadMore) {
+                    container.insertBefore(msgEl, container.firstChild);
+                } else {
+                    container.appendChild(msgEl);
+                }
+            });
+
+            // Если "loadMore", нужно восстановить позицию скролла
+            if (isLoadMore) {
+                const newHeight = container.scrollHeight;
+                container.scrollTop = newHeight - prevHeight;
+            } else {
+                scrollToBottom();
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        isLoadingHistory = false;
+    }
 };
 
 function convertFloat32ToInt16(buffer) {
@@ -477,18 +526,30 @@ function getChatParams() {
     };
 }
 
-function appendMessage(role, text, meta = {}) {
-    const container = document.getElementById('aiChatContainer');
+// <<<--- ИЗМЕНЕНИЕ: ОТДЕЛЬНАЯ ФУНКЦИЯ СОЗДАНИЯ ЭЛЕМЕНТА (для гибкости)
+function createMessageElement(role, text, meta = {}) {
     const div = document.createElement('div');
     div.className = `message ${role === 'user' ? 'sent' : 'received'}`;
     let html = '';
     if (meta.media_url) html += `<audio controls src="${meta.media_url}" style="max-width:200px; margin-bottom:5px;"></audio><br>`;
     html += `<div class="message-content">${text || ''}</div>`;
     if (role === 'ai') html += `<div class="message-meta">${meta.psychotype || 'AI'}</div>`;
+    
+    // 🔥 ДОБАВЛЕНО ВРЕМЯ
+    const timeStr = meta.created_at ? new Date(meta.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    html += `<span class="msg-time">${timeStr}</span>`;
+
     div.innerHTML = html;
-    container.appendChild(div);
-    scrollToBottom();
     return div;
+}
+
+// Wrapper для совместимости со старым кодом
+function appendMessage(role, text, meta = {}) {
+    const container = document.getElementById('aiChatContainer');
+    const el = createMessageElement(role, text, meta);
+    container.appendChild(el);
+    scrollToBottom();
+    return el;
 }
 
 function scrollToBottom() { const c = document.getElementById('aiChatContainer'); c.scrollTop = c.scrollHeight; }
@@ -524,4 +585,4 @@ window.testAIChat = testAIChat;
 window.loadProviders = loadProviders;
 window.loadChatHistory = loadChatHistory;
 
-console.log('✅ AI Chat module loaded (Auto-Settings & Groq Priority)');
+console.log('✅ AI Chat module loaded (Pagination & Timestamps)');

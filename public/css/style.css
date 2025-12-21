@@ -294,3 +294,23 @@ select {
         /* Убеждаемся, что на мобилках ввод не прилипает к краю */
     }
 }
+
+/* --- Timestamps in Chat --- */
+.message {
+    /* Добавляем место снизу для времени, чтобы текст на него не наезжал */
+    padding-bottom: 22px; 
+    min-width: 120px; /* Чтобы совсем короткие сообщения не плющило */
+}
+
+.msg-time {
+    position: absolute;
+    bottom: 5px;
+    right: 10px;
+    font-size: 0.65rem;
+    opacity: 0.7;
+    font-weight: 500;
+    user-select: none;
+}
+
+.message.sent .msg-time { color: rgba(255, 255, 255, 0.8); }
+.message.received .msg-time { color: rgba(255, 255, 255, 0.5); }
