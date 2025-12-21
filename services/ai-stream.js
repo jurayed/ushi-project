@@ -195,7 +195,12 @@ class AiStreamSession {
         try {
             this.metrics.tts_start = Date.now();
             const mp3 = await openaiBase.audio.speech.create({
-                model: "tts-1", voice: "shimmer", input: text, response_format: "mp3",
+                model: "tts-1", 
+				//voice: "shimmer", 
+				voice: "onyx",       // 👈 Onyx звучит на русском гораздо увереннее
+				input: text, 
+				response_format: "mp3",
+				speed: 1.1           // 👈 Ускоряем на 10%. Это снижает задержку 
             });
             const buffer = Buffer.from(await mp3.arrayBuffer());
             

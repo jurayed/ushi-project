@@ -9,9 +9,7 @@ const PSYCHOTYPE_PROMPTS = {
 
 let availableProviders = [];
 let availableModels = {};
-// <<<--- ИЗМЕНЕНИЕ: Добавили хранилище для дефолтных моделей провайдеров
 let providerDefaults = {}; 
-
 let isLiveMode = false;
 
 // STREAMING
@@ -26,6 +24,24 @@ let currentAiBubble = null;
 let manualMediaRecorder = null;
 let manualAudioChunks = [];
 let recordStartTime = 0;
+
+// === НОВАЯ ФУНКЦИЯ ОЗВУЧКИ (TTS) ===
+async function playHighQualityTTS(text) {
+    if (!text) return;
+    try {
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play();
+    } catch (e) {
+        console.warn("HQ TTS failed, fallback to browser", e);
+    }
+}
 
 // === LIVE MODE ===
 window.toggleLiveMode = async function() {
@@ -62,7 +78,6 @@ async function startStreaming() {
     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
 
-    // БЕРЕМ НАСТРОЙКИ (МОДЕЛЬ, ПРОВАЙДЕР, ПРОМПТ)
     const params = getChatParams();
     window.socket.emit('start_voice_chat', { 
         systemPrompt: params.systemPrompt,
@@ -251,6 +266,10 @@ async function chatRegular(psychotype, provider, model, message, systemPrompt) {
         toggleTyping(false);
         if (data.success) {
             appendMessage('ai', data.response, { psychotype });
+            
+            // 🔥 ОЗВУЧКА ОТВЕТА (Если есть текст)
+            playHighQualityTTS(data.response);
+            
             updateLatencyPanel(data.timings);
         }
     } catch (e) { toggleTyping(false); showError(e.message); }
@@ -259,6 +278,8 @@ async function chatRegular(psychotype, provider, model, message, systemPrompt) {
 async function chatStream(psychotype, provider, model, message, systemPrompt) {
     const messageDiv = appendMessage('ai', '...', { psychotype });
     const contentDiv = messageDiv.querySelector('.message-content');
+    let fullResponse = ""; // Накапливаем текст для озвучки
+
     try {
         const response = await fetch('/api/chat/ai/stream', {
             method: 'POST',
@@ -270,15 +291,20 @@ async function chatStream(psychotype, provider, model, message, systemPrompt) {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            contentDiv.textContent += decoder.decode(value);
+            const textChunk = decoder.decode(value);
+            contentDiv.textContent += textChunk;
+            fullResponse += textChunk;
             scrollToBottom();
         }
+        
+        // 🔥 ОЗВУЧКА ПОСЛЕ ОКОНЧАНИЯ СТРИМА
+        playHighQualityTTS(fullResponse);
+
     } catch (e) { contentDiv.innerHTML += `<br><span style="color:red">Error: ${e.message}</span>`; }
 }
 
 // === INIT & HELPERS ===
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Кнопки
     const btn = document.getElementById('recordButton');
     if (btn) {
         btn.onmousedown = window.startAudioMessage;
@@ -287,7 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.ontouchend = (e) => { e.preventDefault(); window.stopAudioMessage(); };
     }
 
-    // 2. Enter
     const msgInput = document.getElementById('messageInput');
     if (msgInput) {
         msgInput.addEventListener('keypress', (e) => {
@@ -295,7 +320,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 3. Промпты и настройки
     const psychotypeSelect = document.getElementById('psychotype');
     const promptArea = document.getElementById('systemPrompt');
     if (psychotypeSelect && promptArea) {
@@ -308,7 +332,6 @@ document.addEventListener('DOMContentLoaded', () => {
         promptArea.value = PSYCHOTYPE_PROMPTS[savedType] || "";
     }
 
-    // 🔥 4. АВТОЗАГРУЗКА ПРОВАЙДЕРОВ
     window.loadProviders();
 });
 
@@ -320,7 +343,7 @@ function updateLatencyPanel(timings) {
     }
 }
 
-// <<<--- ИЗМЕНЕНИЕ: Обновленная функция загрузки провайдеров (сохраняем дефолты)
+// <<<--- ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ (С ЗАЩИТОЙ ОТ ОШИБОК)
 window.loadProviders = async function() {
     try {
         console.log("Loading providers...");
@@ -329,9 +352,11 @@ window.loadProviders = async function() {
         const select = document.getElementById('provider');
         select.innerHTML = '';
         availableModels = {};
-        providerDefaults = {}; // Очищаем дефолты
+        providerDefaults = {}; 
 
-        providers.forEach(p => {
+        let groqIndex = -1;
+        
+        providers.forEach((p, index) => {
             if (p.enabled) {
                 const opt = document.createElement('option');
                 opt.value = p.id;
@@ -339,32 +364,50 @@ window.loadProviders = async function() {
                 select.appendChild(opt);
                 
                 availableModels[p.id] = p.models;
-                // Сохраняем модель по умолчанию, которую прислал сервер
                 providerDefaults[p.id] = p.defaultModel; 
+                
+                if (p.id.toLowerCase().includes('groq')) {
+                    groqIndex = index;
+                    
+                    // 🔥 ФИКС: Превращаем модели в массив, если они вдруг объект (защита от краша)
+                    const modelsList = Array.isArray(p.models) 
+                        ? p.models 
+                        : Object.entries(p.models).map(([k, v]) => ({id: k, ...v}));
+
+                    // Ищем Llama 3 модель
+                    const llamaModel = modelsList.find(m => m.id.includes('llama') && m.id.includes('8b'));
+                    if (llamaModel) {
+                        providerDefaults[p.id] = llamaModel.id;
+                    }
+                }
             }
         });
+        
+        if (groqIndex !== -1) {
+            select.selectedIndex = groqIndex;
+        } else if (select.options.length > 0) {
+            select.selectedIndex = 0;
+        }
+
         if (select.options.length > 0) updateModels();
         select.addEventListener('change', updateModels);
     } catch (e) { console.error("Providers Load Error:", e); }
 };
 
-// <<<--- ИЗМЕНЕНИЕ: Обновленная функция обновления моделей (с автовыбором рабочей)
 function updateModels() {
     const providerId = document.getElementById('provider').value;
     const select = document.getElementById('model');
     select.innerHTML = '';
     
-    // Получаем список моделей и дефолтную
     const models = availableModels[providerId];
     const defaultTarget = providerDefaults[providerId]; 
     let defaultFound = false;
 
     if (models) {
-        // Поддерживаем формат массива или объекта (для совместимости)
         const modelsList = Array.isArray(models) ? models : Object.entries(models).map(([k, v]) => ({id: k, ...v}));
 
         modelsList.forEach((info) => {
-            const id = info.id || info; // Если info - просто строка
+            const id = info.id || info; 
             const name = info.name || id;
 
             const opt = document.createElement('option');
@@ -372,18 +415,14 @@ function updateModels() {
             opt.textContent = name;
             select.appendChild(opt);
 
-            // Проверяем, совпадает ли эта модель с дефолтной
             if (id === defaultTarget) {
                 defaultFound = true;
             }
         });
 
-        // ЛОГИКА АВТОВЫБОРА:
         if (defaultFound) {
-            // Если дефолтная модель есть в списке — ставим её
             select.value = defaultTarget;
         } else if (select.options.length > 0) {
-            // Если дефолтная сломана (нет в списке), выбираем ПЕРВУЮ доступную
             select.selectedIndex = 0;
             console.warn(`Default model "${defaultTarget}" missing. Auto-selected: ${select.value}`);
         }
@@ -466,11 +505,10 @@ window.clearHistory = async function() {
         });
         
         if (res.ok) {
-            // Очищаем UI
             const container = document.getElementById('aiChatContainer');
             if (container) container.innerHTML = '<div style="text-align:center; opacity:0.5; margin-top:50px;">История очищена ✨</div>';
             showSuccess('Память ИИ стерта');
-            toggleAiSettings(false); // Закрываем настройки
+            toggleAiSettings(false); 
         } else {
             showError('Ошибка очистки');
         }
@@ -478,7 +516,7 @@ window.clearHistory = async function() {
         showError(e.message);
     }
 };
-// EXPORTS
+
 window.toggleLiveMode = toggleLiveMode;
 window.startAudioMessage = startAudioMessage;
 window.stopAudioMessage = stopAudioMessage;
@@ -486,4 +524,4 @@ window.testAIChat = testAIChat;
 window.loadProviders = loadProviders;
 window.loadChatHistory = loadChatHistory;
 
-console.log('✅ AI Chat module loaded (Auto-Settings)');
+console.log('✅ AI Chat module loaded (Auto-Settings & Groq Priority)');
