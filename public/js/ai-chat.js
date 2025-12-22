@@ -42,7 +42,12 @@ async function playHighQualityTTS(text) {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.play();
+        audio.volume = 1.0; // На всякий случай
+		// Этот трюк заставляет iOS/Android думать, что это важный звук
+		if (typeof audio.sinkId !== 'undefined') { 
+			audio.setSinkId('default'); 
+		}
+		audio.play();
     } catch (e) {
         console.warn("HQ TTS failed", e);
     }
@@ -169,10 +174,31 @@ async function processAudioQueue() {
     try {
         const chunk = audioQueue.shift();
         const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // --- ФИКС ГРОМКОСТИ START ---
+        // Создаем усилитель (GainNode)
+        const gainNode = tempCtx.createGain();
+        // Устанавливаем громкость: 1.0 = 100%, 2.5 = 250% (экспериментируйте, если будет хрипеть)
+        gainNode.gain.value = 2.0; 
+        
+        // Добавляем компрессор (выравнивает тихие и громкие звуки)
+        const compressor = tempCtx.createDynamicsCompressor();
+        compressor.threshold.value = -50;
+        compressor.knee.value = 40;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0;
+        compressor.release.value = 0.25;
+
         const audioBuffer = await tempCtx.decodeAudioData(chunk);
         const sn = tempCtx.createBufferSource();
         sn.buffer = audioBuffer;
-        sn.connect(tempCtx.destination);
+        
+        // Цепочка подключения: Источник -> Компрессор -> Усилитель -> Динамики
+        sn.connect(compressor);
+        compressor.connect(gainNode);
+        gainNode.connect(tempCtx.destination);
+        // --- ФИКС ГРОМКОСТИ END ---
+
         sn.start(0);
 
         const animInterval = setInterval(() => drawAvatar(Math.random() * 50 + 40), 100);
@@ -180,7 +206,9 @@ async function processAudioQueue() {
         sn.onended = () => {
             clearInterval(animInterval);
             isPlayingAudio = false;
-            tempCtx.close();
+            // Важно закрывать контекст, чтобы не текла память на мобильных
+            if (tempCtx.state !== 'closed') tempCtx.close();
+            
             if (audioQueue.length === 0) {
                 status.textContent = "Слушаю...";
                 status.style.color = "#00cec9";
@@ -188,6 +216,7 @@ async function processAudioQueue() {
             processAudioQueue();
         };
     } catch (e) {
+        console.error(e);
         isPlayingAudio = false;
         processAudioQueue();
     }
