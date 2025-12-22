@@ -179,7 +179,7 @@ async function processAudioQueue() {
         // Создаем усилитель (GainNode)
         const gainNode = tempCtx.createGain();
         // Устанавливаем громкость: 1.0 = 100%, 2.5 = 250% (экспериментируйте, если будет хрипеть)
-        gainNode.gain.value = 2.0; 
+        gainNode.gain.value = 3.0; 
         
         // Добавляем компрессор (выравнивает тихие и громкие звуки)
         const compressor = tempCtx.createDynamicsCompressor();
