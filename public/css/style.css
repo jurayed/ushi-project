@@ -321,3 +321,142 @@ select {
 
 .message.sent .msg-time { color: rgba(255, 255, 255, 0.8); }
 .message.received .msg-time { color: rgba(255, 255, 255, 0.5); }
+
+/* --- Rooms (Group chat) --- */
+.rooms-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.room-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px;
+    border-radius: 14px;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.room-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+}
+
+.room-card-info strong {
+    display: block;
+    font-size: 1.05rem;
+    margin-bottom: 4px;
+}
+
+.room-card-info .room-desc {
+    font-size: 0.85rem;
+    opacity: 0.75;
+    margin-bottom: 6px;
+}
+
+.room-card-info .room-meta {
+    font-size: 0.8rem;
+    opacity: 0.6;
+}
+
+.room-tab {
+    padding: 8px 16px;
+    opacity: 0.6;
+}
+.room-tab.active {
+    opacity: 1;
+    background: var(--primary);
+    color: white;
+}
+
+.message .msg-author {
+    font-size: 0.75rem;
+    font-weight: 600;
+    opacity: 0.85;
+    margin-bottom: 3px;
+}
+
+.message.room-ai-msg {
+    background: linear-gradient(135deg, rgba(108, 92, 231, 0.25), rgba(0, 206, 201, 0.15));
+    border-left: 3px solid var(--accent);
+}
+
+/* --- Listener cards (1-to-1 live) --- */
+.listener-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+    transition: transform 0.15s ease;
+}
+.listener-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+}
+.listener-info strong { display: block; margin-bottom: 4px; font-size: 1rem; }
+.listener-info small { opacity: 0.65; font-size: 0.8rem; }
+
+/* --- Modal --- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: var(--panel-bg);
+    backdrop-filter: blur(20px);
+    border: var(--panel-border);
+    border-radius: 16px;
+    padding: 24px;
+    width: min(500px, 90vw);
+    max-height: 85vh;
+    overflow-y: auto;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.close-modal {
+    cursor: pointer;
+    font-size: 1.8rem;
+    line-height: 1;
+    opacity: 0.7;
+}
+.close-modal:hover { opacity: 1; }
+
+.modal-content label {
+    display: block;
+    margin: 10px 0 4px;
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+.modal-content input[type="text"],
+.modal-content textarea,
+.modal-content select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.3);
+    color: white;
+    font-family: inherit;
+}
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+.checkbox-wrapper input { width: auto; }
+.checkbox-wrapper label { margin: 0; display: inline; }

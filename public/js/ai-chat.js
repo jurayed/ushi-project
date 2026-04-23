@@ -30,26 +30,27 @@ let manualMediaRecorder = null;
 let manualAudioChunks = [];
 let recordStartTime = 0;
 
-// === НОВАЯ ФУНКЦИЯ ОЗВУЧКИ (TTS) ===
+// === ОЗВУЧКА AI-ОТВЕТА (Piper/XTTS локально) ===
 async function playHighQualityTTS(text) {
-    if (!text) return;
+    if (!text || !window.currentToken) return;
     try {
         const response = await fetch('/api/tts', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + window.currentToken
+            },
             body: JSON.stringify({ text })
         });
+        if (!response.ok) return console.warn('TTS unavailable:', response.status);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.volume = 1.0; // На всякий случай
-		// Этот трюк заставляет iOS/Android думать, что это важный звук
-		if (typeof audio.sinkId !== 'undefined') { 
-			audio.setSinkId('default'); 
-		}
-		audio.play();
+        audio.volume = 1.0;
+        audio.addEventListener('ended', () => URL.revokeObjectURL(url));
+        await audio.play();
     } catch (e) {
-        console.warn("HQ TTS failed", e);
+        console.warn('HQ TTS failed', e);
     }
 }
 
@@ -84,17 +85,23 @@ window.toggleLiveMode = async function() {
     }
 };
 
+// Простой амплитудный VAD: считаем что звук есть если avg(|sample|) > threshold.
+// После TAIL_MS тишины отправляем audio_segment_end и "закрываем" сегмент.
+const VAD_THRESHOLD = 0.012;
+const VAD_SILENCE_TAIL_MS = 900;
+const VAD_MIN_VOICED_MS = 400;
+let vadState = null;
+
 async function startStreaming() {
     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
 
     const params = getChatParams();
-    window.socket.emit('start_voice_chat', { 
+    window.socket.emit('start_voice_chat', {
         systemPrompt: params.systemPrompt,
-        provider: params.provider,
         model: params.model
     });
-    
+
     setupSocketVoiceListeners();
 
     source = audioContext.createMediaStreamSource(stream);
@@ -102,18 +109,55 @@ async function startStreaming() {
     source.connect(processor);
     processor.connect(audioContext.destination);
 
-    document.getElementById('liveStatus').textContent = "Слушаю...";
-    
+    document.getElementById('liveStatus').textContent = 'Слушаю...';
+
+    vadState = {
+        hasVoice: false,
+        lastVoiceAt: 0,
+        voicedSinceAt: 0,
+        segmentOpen: false
+    };
+
     processor.onaudioprocess = (e) => {
         if (!isLiveMode) return;
         const inputData = e.inputBuffer.getChannelData(0);
-        
+
         let sum = 0;
         for (let i = 0; i < inputData.length; i++) sum += Math.abs(inputData[i]);
-        if (!isPlayingAudio) drawAvatar(Math.max(10, (sum / inputData.length) * 500));
+        const avg = sum / inputData.length;
+        if (!isPlayingAudio) drawAvatar(Math.max(10, avg * 500));
 
-        const buffer = convertFloat32ToInt16(inputData);
-        window.socket.emit('audio_stream_data', buffer);
+        // Не слушаем пока AI говорит — избегаем эха
+        if (isPlayingAudio) return;
+
+        const now = Date.now();
+        const isVoiced = avg > VAD_THRESHOLD;
+
+        if (isVoiced) {
+            if (!vadState.hasVoice) {
+                vadState.hasVoice = true;
+                vadState.voicedSinceAt = now;
+                vadState.segmentOpen = true;
+            }
+            vadState.lastVoiceAt = now;
+        }
+
+        if (vadState.segmentOpen) {
+            const buffer = convertFloat32ToInt16(inputData);
+            window.socket.emit('audio_stream_data', buffer);
+
+            // Тишина длинная → закрываем сегмент
+            if (vadState.hasVoice && (now - vadState.lastVoiceAt) > VAD_SILENCE_TAIL_MS) {
+                const voicedMs = vadState.lastVoiceAt - vadState.voicedSinceAt;
+                if (voicedMs >= VAD_MIN_VOICED_MS) {
+                    window.socket.emit('audio_segment_end');
+                    const status = document.getElementById('liveStatus');
+                    if (status) status.textContent = 'Думаю...';
+                }
+                vadState.hasVoice = false;
+                vadState.segmentOpen = false;
+            }
+        }
     };
 }
 
@@ -385,45 +429,34 @@ function updateLatencyPanel(timings) {
 
 window.loadProviders = async function() {
     try {
-        console.log("Loading providers...");
         const res = await fetch('/api/providers');
         const providers = await res.json();
         const select = document.getElementById('provider');
+        if (!select) return;
         select.innerHTML = '';
         availableModels = {};
-        providerDefaults = {}; 
+        providerDefaults = {};
 
-        let groqIndex = -1;
-        
-        providers.forEach((p, index) => {
-            if (p.enabled) {
-                const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = p.name;
-                select.appendChild(opt);
-                
-                availableModels[p.id] = p.models;
-                providerDefaults[p.id] = p.defaultModel; 
-                
-                if (p.id.toLowerCase().includes('groq')) {
-                    groqIndex = index;
-                    // Fix models array safety
-                    const modelsList = Array.isArray(p.models) 
-                        ? p.models 
-                        : Object.entries(p.models).map(([k, v]) => ({id: k, ...v}));
-                    
-                    const llamaModel = modelsList.find(m => m.id.includes('llama') && m.id.includes('8b'));
-                    if (llamaModel) providerDefaults[p.id] = llamaModel.id;
-                }
-            }
+        providers.forEach(p => {
+            if (!p.enabled) return;
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name;
+            select.appendChild(opt);
+            availableModels[p.id] = p.models;
+            providerDefaults[p.id] = p.defaultModel;
         });
-        
-        if (groqIndex !== -1) select.selectedIndex = groqIndex;
-        else if (select.options.length > 0) select.selectedIndex = 0;
 
-        if (select.options.length > 0) updateModels();
-        select.addEventListener('change', updateModels);
-    } catch (e) { console.error("Providers Load Error:", e); }
+        if (select.options.length > 0) {
+            select.selectedIndex = 0;
+            updateModels();
+            // Одноразовая подписка — предотвращаем дубликаты при повторной загрузке
+            select.removeEventListener('change', updateModels);
+            select.addEventListener('change', updateModels);
+        }
+    } catch (e) {
+        console.error('Providers Load Error:', e);
+    }
 };
 
 function updateModels() {
@@ -548,7 +581,7 @@ function drawAvatar(volume) {
 function getChatParams() {
     return {
         psychotype: document.getElementById('psychotype')?.value || 'empath',
-        provider: document.getElementById('provider')?.value || 'deepseek',
+        provider: document.getElementById('provider')?.value || 'ollama',
         model: document.getElementById('model')?.value,
         useStreaming: document.getElementById('useStreaming')?.checked,
         systemPrompt: document.getElementById('systemPrompt')?.value
@@ -607,11 +640,4 @@ window.clearHistory = async function() {
     }
 };
 
-window.toggleLiveMode = toggleLiveMode;
-window.startAudioMessage = startAudioMessage;
-window.stopAudioMessage = stopAudioMessage;
-window.testAIChat = testAIChat;
-window.loadProviders = loadProviders;
-window.loadChatHistory = loadChatHistory;
-
-console.log('✅ AI Chat module loaded (Pagination & Timestamps)');
+console.log('✅ AI Chat module loaded');

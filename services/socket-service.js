@@ -1,9 +1,7 @@
 // services/socket-service.js
 const RedisService = require('./redis');
-const { unregisterAsEar } = require('../models/conversations'); 
-
-// 👇 1. ИМПОРТИРУЕМ НОВЫЙ СЕРВИС
-const StreamService = require('./ai-stream'); 
+const StreamService = require('./ai-stream');
+const Rooms = require('../models/rooms');
 
 class SocketService {
     constructor() {
@@ -13,7 +11,8 @@ class SocketService {
 
     initialize(server) {
         this.io = require('socket.io')(server, {
-            cors: { origin: "*", methods: ["GET", "POST"] }
+            cors: { origin: '*', methods: ['GET', 'POST'] },
+            maxHttpBufferSize: 10 * 1024 * 1024 // 10MB (для аудиочанков live-голоса)
         });
 
         this.io.on('connection', (socket) => this.handleConnection(socket));
@@ -22,19 +21,19 @@ class SocketService {
     }
 
     handleConnection(socket) {
-        // 👇 2. ПОДКЛЮЧАЕМ ОБРАБОТЧИК ГОЛОСА ЗДЕСЬ
-        StreamService.handleStreamConnection(socket); 
+        // Live voice
+        StreamService.handleStreamConnection(socket);
 
-        // 1. Вход пользователя
+        // Онлайн
         socket.on('user_online', async ({ userId, userData }) => {
             if (!userId) return;
-            socket.userId = userId; 
+            socket.userId = userId;
             await this.redis.setUserOnline(userId, socket.id, userData);
             console.log(`🟢 User ${userId} connected`);
             this.io.emit('user_status_changed', { userId, status: 'online' });
         });
 
-        // 2. Регистрация слушателя
+        // Слушатели
         socket.on('register_listener', async ({ userId, userData }) => {
             if (!userId) return;
             await this.redis.addActiveListener(userId, {
@@ -42,20 +41,34 @@ class SocketService {
                 socketId: socket.id,
                 available: true
             });
+            socket.emit('listener_registered');
             this.broadcastListeners();
         });
 
-        // 3. Отмена регистрации
         socket.on('unregister_listener', async ({ userId }) => {
             if (!userId) return;
             await this.redis.removeActiveListener(userId);
+            socket.emit('listener_unregistered');
             this.broadcastListeners();
         });
 
-        // 4. WebRTC звонки
+        // Групповые комнаты — подписка/отписка на socket.io room
+        socket.on('join_room_channel', async ({ roomId }) => {
+            if (!roomId || !socket.userId) return;
+            const member = await Rooms.isMember(roomId, socket.userId);
+            if (!member) return;
+            socket.join(`room:${roomId}`);
+        });
+
+        socket.on('leave_room_channel', ({ roomId }) => {
+            if (!roomId) return;
+            socket.leave(`room:${roomId}`);
+        });
+
+        // WebRTC звонки
         this.setupWebRTC(socket);
 
-        // 5. Отключение
+        // Отключение
         socket.on('disconnect', async () => {
             if (socket.userId) {
                 console.log(`🔴 User ${socket.userId} disconnected`);
@@ -97,6 +110,12 @@ class SocketService {
 
     async notifyNewConversation(listenerUserId, data) {
         return this.emitToUser(listenerUserId, 'new_conversation_request', data);
+    }
+
+    // Рассылка события всем в socket.io-комнате `room:<id>`
+    notifyRoomEvent(roomId, event, data) {
+        if (!this.io) return;
+        this.io.to(`room:${roomId}`).emit(event, data);
     }
 }
 

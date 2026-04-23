@@ -1,16 +1,33 @@
 // services/ai-stream.js
-const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
-const { OpenAI } = require('openai');
-const { pool } = require('../models/database');
+// Live voice session (WebSocket). Полностью локальный стек:
+//   STT: faster-whisper-server (chunk-based, после паузы клиента)
+//   LLM: Ollama (stream)
+//   TTS: Piper / XTTS (по предложениям)
+//
+// Протокол сокета (клиент ↔ сервер) — без изменений для фронта:
+//   client → server: 'start_voice_chat' {systemPrompt, model, language?}
+//   client → server: 'audio_stream_data' <Int16 PCM chunk ArrayBuffer>
+//   client → server: 'audio_segment_end' (когда клиент обнаружил конец фразы)
+//   client → server: 'stop_voice_chat'
+//
+//   server → client: 'user_transcription' {text, isFinal}
+//   server → client: 'ai_text_chunk' {text}
+//   server → client: 'ai_audio_chunk' <buffer>
+//   server → client: 'ai_response_complete'
+//   server → client: 'latency_metric' {type, value}
 
-const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
-const openaiBase = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); // Fallback + TTS
+const { pool } = require('../models/database');
+const { AI_PROVIDERS, DEFAULT_MODEL } = require('./ai-providers');
+const { transcribeAudio } = require('./transcription-service');
+const { synthesizeToBuffer } = require('./tts-service');
+
+const ollama = AI_PROVIDERS.ollama;
 
 async function getUserName(userId) {
     try {
         const res = await pool.query('SELECT username FROM users WHERE id = $1', [userId]);
         return res.rows[0]?.username || 'User';
-    } catch (e) { return 'User'; }
+    } catch { return 'User'; }
 }
 
 async function fetchHistory(userId) {
@@ -19,11 +36,11 @@ async function fetchHistory(userId) {
             `SELECT message_text, is_ai_response FROM messages WHERE user_id = $1 ORDER BY sent_at DESC LIMIT 20`,
             [userId]
         );
-        return result.rows.reverse().map(msg => ({
-            role: msg.is_ai_response ? 'assistant' : 'user',
-            content: msg.message_text
+        return result.rows.reverse().map(m => ({
+            role: m.is_ai_response ? 'assistant' : 'user',
+            content: m.message_text
         }));
-    } catch (e) { return []; }
+    } catch { return []; }
 }
 
 async function saveMessage(userId, text, isAi) {
@@ -32,64 +49,147 @@ async function saveMessage(userId, text, isAi) {
             'INSERT INTO messages (user_id, message_text, is_ai_response, ai_psychotype) VALUES ($1, $2, $3, $4)',
             [userId, text, isAi, 'voice-mode']
         );
-    } catch (e) {}
+    } catch {}
+}
+
+// PCM Int16 → WAV (моно, 16kHz) — для Whisper.
+// На входе у нас сырые PCM чанки; склеиваем и оборачиваем в минимальный WAV-заголовок.
+function pcmToWav(pcmBuffers, sampleRate = 16000) {
+    const totalLen = pcmBuffers.reduce((s, b) => s + b.length, 0);
+    const data = Buffer.concat(pcmBuffers, totalLen);
+
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + data.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);           // fmt chunk size
+    header.writeUInt16LE(1, 20);            // PCM
+    header.writeUInt16LE(1, 22);            // mono
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(sampleRate * 2, 28); // byteRate = sampleRate * channels * bytesPerSample
+    header.writeUInt16LE(2, 32);            // blockAlign
+    header.writeUInt16LE(16, 34);           // bitsPerSample
+    header.write('data', 36);
+    header.writeUInt32LE(data.length, 40);
+
+    return Buffer.concat([header, data]);
 }
 
 class AiStreamSession {
     constructor(socket, userId) {
         this.socket = socket;
         this.userId = userId;
-        this.dgConnection = null;
         this.isProcessing = false;
-        this.sentenceBuffer = ""; 
-        this.systemPrompt = "Ты эмпатичный собеседник.";
-        
-        // Настройки по умолчанию
-        this.provider = 'openai'; 
-        this.model = 'gpt-4o';
-        
-        this.metrics = { stt_start: 0, stt_end: 0, llm_start: 0, llm_first_byte: 0, tts_start: 0, tts_end: 0 };
+        this.pcmBuffers = [];
+        this.systemPrompt = 'Ты эмпатичный собеседник.';
+        this.model = DEFAULT_MODEL;
+        this.language = ''; // '' = авто
+        this.metrics = { stt: 0, llm: 0, tts: 0 };
     }
 
     start(config = {}) {
         if (config.systemPrompt) this.systemPrompt = config.systemPrompt;
-        if (config.provider) this.provider = config.provider;
         if (config.model) this.model = config.model;
-
-        console.log(`🎤 Live Start: ${this.provider}/${this.model} for user ${this.userId}`);
-
-        this.dgConnection = deepgram.listen.live({
-            model: "nova-2", language: "ru", smart_format: true,
-            encoding: "linear16", sample_rate: 16000, interim_results: true,
-            vad_events: true, endpointing: 300
-        });
-
-        this.dgConnection.on(LiveTranscriptionEvents.Open, () => {
-            console.log("🟢 STT Stream Started");
-            this.metrics.stt_start = Date.now();
-
-            this.dgConnection.on(LiveTranscriptionEvents.Transcript, (data) => {
-                const transcript = data.channel.alternatives[0].transcript;
-                if (data.is_final && transcript.trim().length > 0) {
-                    
-                    this.metrics.stt_end = Date.now();
-                    this.sendMetric('stt', this.metrics.stt_end - this.metrics.stt_start);
-                    this.metrics.stt_start = Date.now();
-
-                    this.socket.emit('user_transcription', { text: transcript, isFinal: true });
-                    this.processLLM(transcript);
-                } else {
-                    if(transcript.trim()) this.socket.emit('user_transcription', { text: transcript, isFinal: false });
-                }
-            });
-        });
-        
-        this.dgConnection.on(LiveTranscriptionEvents.Error, (err) => console.error(err));
+        if (config.language) this.language = config.language;
+        console.log(`🎤 Live voice start: model=${this.model}, user=${this.userId}`);
     }
 
     handleAudioChunk(chunk) {
-        if (this.dgConnection && this.dgConnection.getReadyState() === 1) {
-            this.dgConnection.send(chunk);
+        // chunk — ArrayBuffer с Int16 PCM. Сохраняем как Buffer.
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        this.pcmBuffers.push(buf);
+    }
+
+    async handleSegmentEnd() {
+        if (this.isProcessing) return;
+        if (this.pcmBuffers.length === 0) return;
+        this.isProcessing = true;
+
+        const pcm = this.pcmBuffers;
+        this.pcmBuffers = [];
+
+        try {
+            // 1) STT
+            const sttStart = Date.now();
+            const wav = pcmToWav(pcm, 16000);
+            if (wav.length < 5000) {
+                // слишком короткий сегмент — вероятно тишина
+                this.isProcessing = false;
+                return;
+            }
+            const { text } = await transcribeAudio(wav, 'segment.wav', this.language || null);
+            const sttMs = Date.now() - sttStart;
+            this.sendMetric('stt', sttMs);
+
+            if (!text || !text.trim()) {
+                this.isProcessing = false;
+                return;
+            }
+
+            this.socket.emit('user_transcription', { text, isFinal: true });
+            await this.runLLM(text);
+        } catch (err) {
+            console.error('Voice segment error:', err.message);
+            this.socket.emit('ai_text_chunk', { text: ` [Ошибка: ${err.message}]` });
+            this.socket.emit('ai_response_complete');
+        } finally {
+            this.isProcessing = false;
+        }
+    }
+
+    async runLLM(userText) {
+        await saveMessage(this.userId, userText, false);
+        const history = await fetchHistory(this.userId);
+        const username = await getUserName(this.userId);
+        const sysPrompt = `${this.systemPrompt}\n\n[CONTEXT]\nUser: ${username}`;
+
+        const messages = [
+            { role: 'system', content: sysPrompt },
+            ...history,
+            { role: 'user', content: userText }
+        ];
+
+        const llmStart = Date.now();
+        let firstByte = 0;
+        let sentenceBuf = '';
+        let fullResponse = '';
+
+        for await (const chunk of ollama.streamChunks(sysPrompt, messages, this.model)) {
+            if (!firstByte) {
+                firstByte = Date.now();
+                this.sendMetric('llm', firstByte - llmStart);
+            }
+            sentenceBuf += chunk;
+            fullResponse += chunk;
+            this.socket.emit('ai_text_chunk', { text: chunk });
+
+            if (this.hasSentenceEnd(chunk)) {
+                const piece = sentenceBuf.trim();
+                sentenceBuf = '';
+                if (piece.length > 2) await this.sendAudio(piece);
+            }
+        }
+
+        const tail = sentenceBuf.trim();
+        if (tail.length > 0) await this.sendAudio(tail);
+
+        await saveMessage(this.userId, fullResponse, true);
+        this.socket.emit('ai_response_complete');
+    }
+
+    hasSentenceEnd(chunk) {
+        return /[.!?…\n]/.test(chunk);
+    }
+
+    async sendAudio(text) {
+        try {
+            const ttsStart = Date.now();
+            const { buffer } = await synthesizeToBuffer(text, { language: this.language || undefined });
+            this.sendMetric('tts', Date.now() - ttsStart);
+            this.socket.emit('ai_audio_chunk', buffer);
+        } catch (err) {
+            console.error('TTS chunk error:', err.message);
         }
     }
 
@@ -97,125 +197,9 @@ class AiStreamSession {
         this.socket.emit('latency_metric', { type, value });
     }
 
-    // Выбор клиента (Важно для скорости)
-    getLlmClient() {
-        if (this.provider === 'deepseek') {
-            return new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: 'https://api.deepseek.com' });
-        }
-        if (this.provider === 'grok') {
-            return new OpenAI({ apiKey: process.env.XAI_API_KEY, baseURL: 'https://api.x.ai/v1' });
-        }
-        if (this.provider === 'groq') {
-            return new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
-        }
-        return openaiBase;
-    }
-
-    async processLLM(text) {
-        if (this.isProcessing) return;
-        this.isProcessing = true;
-        this.metrics.llm_start = Date.now();
-
-        try {
-            await saveMessage(this.userId, text, false);
-            const history = await fetchHistory(this.userId);
-            const username = await getUserName(this.userId);
-            
-            const enhancedPrompt = `${this.systemPrompt}\n\n[CONTEXT]\nUser Name: ${username}`;
-            
-            // Чистое сообщение пользователя (без скрытых инструкций)
-            const userContent = text;
-
-            const messages = [
-                { role: "system", content: enhancedPrompt },
-                ...history,
-                { role: "user", content: userContent }
-            ];
-
-            const client = this.getLlmClient();
-
-            // Google пока скипаем в live
-            if (this.provider === 'google') {
-                this.socket.emit('ai_text_chunk', { text: "[Google Gemini Live not supported, switch to Groq/Grok/OpenAI]" });
-                this.isProcessing = false;
-                return;
-            }
-
-            const stream = await client.chat.completions.create({
-                model: this.model, 
-                messages: messages, 
-                stream: true,
-            });
-
-            this.sentenceBuffer = "";
-            let fullResponse = "";
-            let firstByteReceived = false;
-
-            for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content || "";
-                if (!content) continue;
-
-                if (!firstByteReceived) {
-                    this.metrics.llm_first_byte = Date.now();
-                    this.sendMetric('llm', this.metrics.llm_first_byte - this.metrics.llm_start);
-                    firstByteReceived = true;
-                }
-
-                this.socket.emit('ai_text_chunk', { text: content });
-                this.sentenceBuffer += content;
-                fullResponse += content;
-
-                if (this.shouldSpeak(content)) {
-                    const textToSpeak = this.sentenceBuffer.trim();
-                    if (textToSpeak.length > 2) {
-                        await this.generateAndSendAudio(textToSpeak);
-                        this.sentenceBuffer = "";
-                    }
-                }
-            }
-
-            if (this.sentenceBuffer.trim().length > 0) {
-                await this.generateAndSendAudio(this.sentenceBuffer);
-            }
-            
-            await saveMessage(this.userId, fullResponse, true);
-            this.socket.emit('ai_response_complete');
-
-        } catch (error) {
-            console.error("LLM Error:", error);
-            this.socket.emit('ai_text_chunk', { text: ` Error: ${error.message}` });
-        } finally {
-            this.isProcessing = false;
-        }
-    }
-
-    shouldSpeak(chunk) { return ['.', '!', '?', '\n'].some(punct => chunk.includes(punct)); }
-
-    async generateAndSendAudio(text) {
-        try {
-            this.metrics.tts_start = Date.now();
-            const mp3 = await openaiBase.audio.speech.create({
-                model: "tts-1", 
-				//voice: "shimmer", 
-				voice: "onyx",       // 👈 Onyx звучит на русском гораздо увереннее
-				input: text, 
-				response_format: "mp3",
-				speed: 1.1           // 👈 Ускоряем на 10%. Это снижает задержку 
-            });
-            const buffer = Buffer.from(await mp3.arrayBuffer());
-            
-            this.metrics.tts_end = Date.now();
-            this.sendMetric('tts', this.metrics.tts_end - this.metrics.tts_start);
-
-            this.socket.emit('ai_audio_chunk', buffer);
-        } catch (e) { console.error("TTS Error:", e); }
-    }
-
     stop() {
-        if (this.dgConnection) {
-            this.dgConnection.finish();
-            this.dgConnection = null;
-        }
+        this.pcmBuffers = [];
+        this.isProcessing = false;
     }
 }
 
@@ -224,14 +208,23 @@ const sessions = new Map();
 module.exports = {
     handleStreamConnection: (socket) => {
         socket.on('start_voice_chat', (config) => {
+            if (!socket.userId) {
+                socket.emit('ai_text_chunk', { text: '[Не авторизован]' });
+                return;
+            }
             const session = new AiStreamSession(socket, socket.userId);
             sessions.set(socket.id, session);
-            session.start(config);
+            session.start(config || {});
         });
 
         socket.on('audio_stream_data', (chunk) => {
             const session = sessions.get(socket.id);
             if (session) session.handleAudioChunk(chunk);
+        });
+
+        socket.on('audio_segment_end', () => {
+            const session = sessions.get(socket.id);
+            if (session) session.handleSegmentEnd();
         });
 
         socket.on('stop_voice_chat', () => {

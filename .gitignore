@@ -1,6 +1,10 @@
 # Environment variables
 .env
 .env.local
+
+# Redis persistence
+dump.rdb
+appendonly.aof
 .env.production
 .env.development.local
 .env.test.local

@@ -1,7 +1,3 @@
-CREATE TABLE IF NOT EXISTS users (
-	id SERIAL PRIMARY KEY,
-	username VARCHAR(50) UNIQUE NOT NULL,
-	email VARCHAR(100) UNIQUE NOT NULL,
-	password_hash VARCHAR(255) NOT NULL,
-	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
+-- Схема создаётся автоматически в models/database.js::initializeDatabase()
+-- при старте сервера. Отдельно применять этот файл НЕ нужно.
+-- Достаточно создать пустую БД:   CREATE DATABASE ushi;

@@ -248,13 +248,4 @@ function updateEarBtn(text) {
     if (btn) btn.textContent = text;
 }
 
-// Делаем функции доступными для кнопок HTML
-window.toggleEarRegistration = toggleEarRegistration;
-window.startConversationWith = startConversationWith;
-window.closeConversation = closeConversation;
-window.sendConversationMessage = sendConversationMessage;
-window.startConversationAudio = startConversationAudio;
-window.stopConversationAudio = stopConversationAudio;
-window.cancelConversationAudio = cancelConversationAudio;
-
 console.log('✅ Live Listeners module loaded');

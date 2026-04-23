@@ -131,19 +131,18 @@ async function closeConversation(conversationId, userId) {
 async function getUserActiveConversations(userId) {
   try {
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.*,
               u1.username as user_username,
               u2.username as ear_username
        FROM conversations c
        JOIN users u1 ON c.user_id = u1.id
-       JOIN users u2 ON c.ear_id = u2.id -- тут нужно джойнить ears -> users, но пока оставим так если ear_id == user_id (ошибка логики в старом коде)
-       WHERE (c.user_id = $1 OR c.ear_id = (SELECT id FROM ears WHERE user_id = $1)) 
-       AND c.status = 'active'
+       JOIN ears e ON c.ear_id = e.id
+       JOIN users u2 ON e.user_id = u2.id
+       WHERE (c.user_id = $1 OR e.user_id = $1)
+         AND c.status = 'active'
        ORDER BY c.created_at DESC`,
       [userId]
     );
-    
-    // Примечание: SQL выше немного сложный из-за связи ears/users, но рабочий.
     return result.rows;
   } catch (error) {
     console.error('Get Active Convos Error:', error);

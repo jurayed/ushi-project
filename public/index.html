@@ -56,9 +56,14 @@
                     <p>Умный собеседник, поддержка голоса</p>
                 </div>
                 <div class="glass-panel mode-card" onclick="switchToMode('live')">
+                    <i class="fas fa-user-friends fa-3x"></i>
+                    <h2>Собеседник</h2>
+                    <p>Найди слушателя или стань им (1-на-1)</p>
+                </div>
+                <div class="glass-panel mode-card" onclick="switchToMode('rooms')">
                     <i class="fas fa-users fa-3x"></i>
-                    <h2>Люди</h2>
-                    <p>Найди слушателя или стань им</p>
+                    <h2>Группы</h2>
+                    <p>Групповой чат. Люди + AI-участник</p>
                 </div>
             </div>
         </div>
@@ -148,6 +153,81 @@
             </div>
         </div>
 
+        <!-- СЕКЦИЯ ГРУППЫ (ROOMS) -->
+        <div id="roomsSection" class="container hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <button class="btn-icon" onclick="showModeSelection()"><i class="fas fa-arrow-left"></i></button>
+                <h2>Группы</h2>
+                <button class="btn btn-primary" onclick="toggleCreateRoomModal(true)"><i class="fas fa-plus"></i> Создать</button>
+            </div>
+
+            <div id="roomsListView">
+                <div class="room-tabs" style="display:flex; gap:10px; margin-bottom:15px;">
+                    <button class="btn btn-secondary room-tab active" data-tab="my" onclick="switchRoomTab('my')">Мои</button>
+                    <button class="btn btn-secondary room-tab" data-tab="public" onclick="switchRoomTab('public')">Публичные</button>
+                </div>
+                <div id="roomsListContainer" class="rooms-list"></div>
+            </div>
+
+            <!-- Комната (чат) -->
+            <div id="roomChatView" class="chat-layout glass-panel hidden" style="height: 80vh;">
+                <div class="chat-header">
+                    <button class="btn-icon" onclick="closeRoomView()"><i class="fas fa-arrow-left"></i></button>
+                    <div>
+                        <h3 id="roomChatTitle">Комната</h3>
+                        <div id="roomChatParticipants" style="font-size:12px; opacity:0.7;"></div>
+                    </div>
+                    <button class="btn-icon" onclick="toggleRoomSettings()"><i class="fas fa-cog"></i></button>
+                </div>
+
+                <div id="roomMessages" class="messages-area"></div>
+                <div id="roomAiTypingIndicator" class="hidden" style="padding:0 20px; font-size:0.85rem; opacity:0.7;">🤖 AI печатает...</div>
+
+                <div class="input-area">
+                    <input type="text" id="roomMessageInput" placeholder="Сообщение (@ai для ответа бота)">
+                    <button class="btn-icon text-primary" onclick="sendRoomMessage()"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модалка создания комнаты -->
+        <div id="createRoomModal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Новая комната</h3>
+                    <span class="close-modal" onclick="toggleCreateRoomModal(false)">&times;</span>
+                </div>
+                <label>Название:</label>
+                <input type="text" id="newRoomName" maxlength="120" placeholder="Например: Ночные разговоры">
+                <label>Описание (опционально):</label>
+                <textarea id="newRoomDesc" rows="2" style="width:100%;"></textarea>
+
+                <div class="checkbox-wrapper"><input type="checkbox" id="newRoomPublic" checked><label for="newRoomPublic">Публичная</label></div>
+                <div class="checkbox-wrapper"><input type="checkbox" id="newRoomAiEnabled" checked><label for="newRoomAiEnabled">AI участвует</label></div>
+                <div class="checkbox-wrapper"><input type="checkbox" id="newRoomAiAuto"><label for="newRoomAiAuto">AI отвечает автоматически (иначе только по @ai)</label></div>
+
+                <label>Характер AI:</label>
+                <select id="newRoomAiPsychotype">
+                    <option value="empath">Эмпат</option>
+                    <option value="rational">Рационалист</option>
+                    <option value="optimist">Оптимист</option>
+                </select>
+
+                <button class="btn btn-primary w-100" style="margin-top:20px;" onclick="submitCreateRoom()">Создать</button>
+            </div>
+        </div>
+
+        <!-- Модалка настроек комнаты -->
+        <div id="roomSettingsModal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Настройки комнаты</h3>
+                    <span class="close-modal" onclick="toggleRoomSettings(false)">&times;</span>
+                </div>
+                <div id="roomSettingsBody"></div>
+            </div>
+        </div>
+
         <!-- СЕКЦИЯ LIVE -->
         <div id="liveSection" class="container hidden">
              <!-- Список слушателей -->
@@ -193,6 +273,7 @@
     <script type="module" src="js/webrtc.js"></script>
     <script type="module" src="js/ai-chat.js"></script>
     <script type="module" src="js/live-listeners.js"></script>
+    <script type="module" src="js/rooms.js"></script>
     <script type="module" src="js/socket-client.js"></script>
     <script type="module" src="js/app.js"></script>
 

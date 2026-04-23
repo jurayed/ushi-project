@@ -51,6 +51,8 @@ const providersRoutes = require('./routes/providers');
 const aiChatRoutes = require('./routes/ai-chat');
 const liveEarsRoutes = require('./routes/live-ears');
 const uploadRoutes = require('./routes/upload');
+const ttsRoutes = require('./routes/tts');
+const roomsRoutes = require('./routes/rooms');
 
 // Подключение API маршрутов
 app.use('/api', authRoutes);
@@ -58,6 +60,8 @@ app.use('/api', providersRoutes);
 app.use('/api/chat', aiChatRoutes);
 app.use('/api', liveEarsRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api', ttsRoutes);
+app.use('/api', roomsRoutes);
 
 // --- ВРЕМЕННЫЕ МАРШРУТЫ (Лучше перенести их в отдельные контроллеры позже) ---
 

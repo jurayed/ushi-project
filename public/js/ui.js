@@ -82,21 +82,30 @@ export function showModeSelection() {
     document.getElementById('modeSelectionSection')?.classList.remove('hidden');
     document.getElementById('aiSection')?.classList.add('hidden');
     document.getElementById('liveSection')?.classList.add('hidden');
+    document.getElementById('roomsSection')?.classList.add('hidden');
 }
 
 export function switchToMode(mode) {
     document.getElementById('modeSelectionSection')?.classList.add('hidden');
 
+    const ai = document.getElementById('aiSection');
+    const live = document.getElementById('liveSection');
+    const rooms = document.getElementById('roomsSection');
+
+    ai?.classList.add('hidden');
+    live?.classList.add('hidden');
+    rooms?.classList.add('hidden');
+
     if (mode === 'ai') {
-        document.getElementById('aiSection')?.classList.remove('hidden');
-        document.getElementById('liveSection')?.classList.add('hidden');
-        // Загружаем провайдеры если доступны в глобальной области
+        ai?.classList.remove('hidden');
         if (window.loadProviders) window.loadProviders();
         if (window.loadChatHistory) window.loadChatHistory();
     } else if (mode === 'live') {
-        document.getElementById('aiSection')?.classList.add('hidden');
-        document.getElementById('liveSection')?.classList.remove('hidden');
+        live?.classList.remove('hidden');
         if (window.loadAvailableListeners) window.loadAvailableListeners();
+    } else if (mode === 'rooms') {
+        rooms?.classList.remove('hidden');
+        if (window.loadRooms) window.loadRooms('my');
     }
 }
 
